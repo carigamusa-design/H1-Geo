@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "H1-Geo Coordinate Assertion (draft v0)",
+  "description": "Proposed cross-domain coordinate assertion. Does not establish parcel identity or measurement accuracy.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "latitude",
+    "longitude",
+    "crs",
+    "source",
+    "capturedAt",
+    "accuracyMeters",
+    "provenanceRef"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "h1-geo/coordinate-assertion-v0"
+    },
+    "latitude": {
+      "type": "number",
+      "minimum": -90,
+      "maximum": 90
+    },
+    "longitude": {
+      "type": "number",
+      "minimum": -180,
+      "maximum": 180
+    },
+    "crs": {
+      "const": "EPSG:4326"
+    },
+    "source": {
+      "enum": [
+        "device_position",
+        "manual_target_pin",
+        "refined_manual",
+        "sensor_observation",
+        "external_reference"
+      ]
+    },
+    "capturedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "accuracyMeters": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "Nullable. Device accuracy refers to device position, not automatically to target location."
+    },
+    "provenanceRef": {
+      "type": "string",
+      "minLength": 1
+    },
+    "notes": {
+      "type": "string",
+      "maxLength": 500
+    }
+  }
+}
