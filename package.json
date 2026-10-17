@@ -1,0 +1,13 @@
+{
+  "name": "h1-geo",
+  "version": "0.0.0",
+  "private": true,
+  "description": "H1-Geo foundation: provider-neutral coordinate assertion validation (GEO-002 Stage A).",
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=18.17.0"
+  }
+}

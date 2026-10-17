@@ -54,7 +54,9 @@
     },
     "provenanceRef": {
       "type": "string",
-      "minLength": 1
+      "minLength": 1,
+      "pattern": "\\S",
+      "description": "Non-empty and not whitespace-only."
     },
     "notes": {
       "type": "string",

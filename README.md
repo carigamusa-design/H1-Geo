@@ -6,7 +6,23 @@
 H1-Geo develops reusable geographic capabilities for homes, services, mobility, agriculture, infrastructure, drones and robotics. The first commercial direction is a location → observation → reviewable opportunity candidate → eventual authorized H1-VNN work loop. The foundation is designed for many domains; the first release is deliberately narrow and measurable.
 
 ## Current state
-**Foundation proposal / GEO-002 Stage A.** This repository does not yet contain a working map, live GPS engine, geocoder, parcel registry, property measurement engine, or deployed service. Do not mistake contracts or diagrams for implemented capabilities.
+**Foundation / GEO-002 Stage A.** This repository contains founding documents, a draft coordinate assertion contract, and a dependency-free validation library for that contract. It does not yet contain a working map, live GPS engine, geocoder, parcel registry, property measurement engine, or deployed service. Do not mistake contracts or diagrams for implemented capabilities.
+
+## Coordinate assertion validation
+`src/coordinate-assertion.js` implements [contracts/geo-coordinate-assertion-v0.schema.json](contracts/geo-coordinate-assertion-v0.schema.json) as executable code. It is pure and provider-neutral: no I/O, no network calls, no coercion, no input mutation, and no fabricated values. `validateCoordinateAssertion(value)` returns `{ valid, errors }` where each error is `{ field, message }`.
+
+```js
+import { validateCoordinateAssertion } from "./src/coordinate-assertion.js";
+```
+
+## Tests
+Requires Node.js >= 18.17. No dependencies.
+
+```sh
+npm test
+```
+
+Runs `node --test` against `test/`, covering boundary coordinates, non-finite values, source attribution, unknown accuracy, timestamps, and no fabricated certainty.
 
 ## Read first
 - [Founding charter](docs/FOUNDING_CHARTER.md)
