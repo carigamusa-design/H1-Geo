@@ -7,6 +7,8 @@ import { SCHEMA_VERSION, CRS } from "../coordinate-assertion.js";
 import { createAssertionStore } from "./assertion-store.js";
 import { createRecordStore } from "./record-store.js";
 import { createObservation, validateObservation, OBSERVATION_STORE_KEY } from "./observation.js";
+import { createEvidenceLink } from "./evidence.js";
+import { createEvidenceStore } from "./evidence-store.js";
 import {
   createCandidate,
   transitionCandidateStatus,
@@ -32,6 +34,7 @@ const candidateStore = createRecordStore({
   validate: validateCandidate,
   idPrefix: "cand",
 });
+const evidenceStore = createEvidenceStore(window.localStorage, { assertionStore, observationStore });
 
 let draft = null; // { latitude, longitude, source, accuracyMeters }
 let selectedId = null;
@@ -166,7 +169,7 @@ $("btn-obs-save").addEventListener("click", () => {
   const observation = createObservation({
     assertionId: selectedId,
     summary: $("o-summary").value.trim(),
-    evidenceRef: $("o-evidence").value.trim() || null,
+    evidenceRef: null,
   });
   const result = observationStore.save(observation);
   if (!result.ok) {
@@ -257,14 +260,66 @@ function renderDetail(id) {
 
   const obsList = $("obs-list");
   obsList.replaceChildren();
-  for (const o of observationStore.list().filter((o) => o.record.assertionId === id)) {
+  const observations = observationStore.list().filter((o) => o.record.assertionId === id);
+  for (const o of observations) {
     const li = document.createElement("li");
-    li.textContent = `${o.record.summary}${o.record.evidenceRef ? ` · evidence: ${o.record.evidenceRef}` : ""}`;
+    li.textContent = `${o.id} — ${o.record.summary}`;
     obsList.appendChild(li);
   }
 
+  const target = $("ev-target");
+  target.replaceChildren();
+  const optPin = document.createElement("option");
+  optPin.value = `assertion:${id}`;
+  optPin.textContent = "this pin";
+  target.appendChild(optPin);
+  for (const o of observations) {
+    const opt = document.createElement("option");
+    opt.value = `observation:${o.id}`;
+    opt.textContent = `observation ${o.id.slice(0, 12)}…`;
+    target.appendChild(opt);
+  }
+
+  renderEvidence(id);
   renderCandidates(id);
 }
+
+function renderEvidence(id) {
+  const wrap = $("ev-list");
+  wrap.replaceChildren();
+  for (const e of evidenceStore.linksForAssertionTree(id)) {
+    const li = document.createElement("li");
+    const strong = document.createElement("strong");
+    strong.textContent = `${e.record.kind}: `;
+    li.appendChild(strong);
+    li.appendChild(document.createTextNode(e.record.reference));
+    const small = document.createElement("small");
+    small.textContent = ` → ${e.record.targetType} ${e.record.targetId.slice(0, 14)}…${e.record.note ? ` · ${e.record.note}` : ""}`;
+    li.appendChild(small);
+    wrap.appendChild(li);
+  }
+}
+
+$("btn-ev-add").addEventListener("click", () => {
+  if (!selectedId) return;
+  const [targetType, targetId] = $("ev-target").value.split(":");
+  const link = createEvidenceLink({
+    targetType,
+    targetId,
+    kind: $("ev-kind").value,
+    reference: $("ev-ref").value.trim(),
+    note: $("ev-note").value.trim() || null,
+  });
+  const result = evidenceStore.save(link);
+  if (!result.ok) {
+    notice(`Evidence not saved: ${result.errors.map((e) => `${e.field} ${e.message}`).join("; ")}`, "error");
+    return;
+  }
+  $("ev-ref").value = "";
+  $("ev-note").value = "";
+  notice(`Evidence link ${result.id} saved (reference only — no media stored).`);
+  renderEvidence(selectedId);
+});
 
 function renderCandidates(id) {
   const wrap = $("cand-list");
@@ -289,7 +344,11 @@ function renderCandidates(id) {
       });
       li.appendChild(btn);
     }
-    const payload = buildVnnDryRunPayload({ candidate: c.record, assertion });
+    const payload = buildVnnDryRunPayload({
+      candidate: c.record,
+      assertion,
+      evidenceLinks: evidenceStore.linksForAssertionTree(id).map((e) => e.record),
+    });
     const check = validateVnnDryRunPayload(payload);
     const pre = document.createElement("pre");
     pre.className = "payload";
@@ -304,6 +363,7 @@ for (const [name, store] of [
   ["assertions", assertionStore],
   ["observations", observationStore],
   ["candidates", candidateStore],
+  ["evidence links", evidenceStore],
 ]) {
   const h = store.health();
   if (h.corrupted) notice(`${QUARANTINE_MESSAGE} (${name}: ${h.invalidEntryCount} invalid entr${h.invalidEntryCount === 1 ? "y" : "ies"})`, "warn");

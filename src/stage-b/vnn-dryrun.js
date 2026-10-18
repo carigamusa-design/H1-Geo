@@ -16,7 +16,7 @@ function fail(errors, field, message) {
   errors.push({ field, message });
 }
 
-export function buildVnnDryRunPayload({ candidate, assertion }) {
+export function buildVnnDryRunPayload({ candidate, assertion, evidenceLinks = [] }) {
   const location = `${assertion.latitude},${assertion.longitude}`;
   return {
     schemaRef: VNN_DRYRUN_SCHEMA_VERSION,
@@ -26,6 +26,7 @@ export function buildVnnDryRunPayload({ candidate, assertion }) {
     candidateStatus: candidate.status,
     assertionId: candidate.assertionId,
     observationId: candidate.observationId,
+    evidenceRefs: evidenceLinks.map((l) => ({ kind: l.kind, reference: l.reference })),
     coordinateSource: assertion.source,
     accuracyMeters: assertion.accuracyMeters,
     capturedAt: assertion.capturedAt,
@@ -58,6 +59,19 @@ export function validateVnnDryRunPayload(value) {
   }
   if (typeof value.assertionId !== "string" || value.assertionId.length < 1) {
     fail(errors, "assertionId", "must reference the source assertion");
+  }
+  if (!Array.isArray(value.evidenceRefs)) {
+    fail(errors, "evidenceRefs", "must be an array (empty allowed — missing evidence is honest)");
+  } else {
+    for (const [i, ref] of value.evidenceRefs.entries()) {
+      if (
+        typeof ref !== "object" || ref === null ||
+        typeof ref.kind !== "string" || ref.kind.length < 1 ||
+        typeof ref.reference !== "string" || ref.reference.length < 1
+      ) {
+        fail(errors, `evidenceRefs[${i}]`, "must be { kind, reference } with non-empty strings");
+      }
+    }
   }
   return { valid: errors.length === 0, errors };
 }

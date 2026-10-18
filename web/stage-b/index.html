@@ -91,14 +91,32 @@
           <legend>4. Observation draft</legend>
           <label for="o-summary">Summary</label>
           <textarea id="o-summary" rows="2" placeholder="e.g. Fence appears damaged"></textarea>
-          <label for="o-evidence">Evidence ref (SnapN'Talk captureId, optional)</label>
-          <input id="o-evidence" placeholder="cap_… (reference only, no media)" />
           <button id="btn-obs-save" type="button">Save observation</button>
           <ul id="obs-list"></ul>
         </fieldset>
 
         <fieldset>
-          <legend>5. Opportunity candidate</legend>
+          <legend>5. Evidence references</legend>
+          <p class="hint">Reference only — SnapN'Talk/HomeVault keep capture and document authority. No media stored here.</p>
+          <label for="ev-target">Attach to</label>
+          <select id="ev-target"></select>
+          <label for="ev-kind">Kind</label>
+          <select id="ev-kind">
+            <option value="snapntalk_capture">snapntalk_capture (cap_…)</option>
+            <option value="snapntalk_package">snapntalk_package (pkg_…)</option>
+            <option value="content">content (content://sha256/…)</option>
+            <option value="document">document (HomeVault doc id)</option>
+          </select>
+          <label for="ev-ref">Reference</label>
+          <input id="ev-ref" placeholder="cap_ / pkg_ / content://sha256/… / doc id" />
+          <label for="ev-note">Note (optional)</label>
+          <input id="ev-note" />
+          <button id="btn-ev-add" type="button">Link evidence</button>
+          <ul id="ev-list"></ul>
+        </fieldset>
+
+        <fieldset>
+          <legend>6. Opportunity candidate</legend>
           <label for="c-summary">Summary (defaults to latest observation)</label>
           <textarea id="c-summary" rows="2"></textarea>
           <button id="btn-candidate" type="button">Create candidate (unverified)</button>
