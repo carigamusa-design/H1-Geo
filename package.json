@@ -5,9 +5,16 @@
   "description": "H1-Geo foundation: provider-neutral coordinate assertion validation (GEO-002 Stage A).",
   "type": "module",
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "stage-b": "node scripts/serve-stage-b.mjs"
+  },
+  "devDependencies": {
+    "leaflet": "1.9.4"
   },
   "engines": {
     "node": ">=18.17.0"
+  },
+  "devDependencies": {
+    "leaflet": "1.9.4"
   }
 }

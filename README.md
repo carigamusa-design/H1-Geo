@@ -6,7 +6,7 @@
 H1-Geo develops reusable geographic capabilities for homes, services, mobility, agriculture, infrastructure, drones and robotics. The first commercial direction is a location → observation → reviewable opportunity candidate → eventual authorized H1-VNN work loop. The foundation is designed for many domains; the first release is deliberately narrow and measurable.
 
 ## Current state
-**Foundation / GEO-002 Stage A.** This repository contains founding documents, a draft coordinate assertion contract, and a dependency-free validation library for that contract. It does not yet contain a working map, live GPS engine, geocoder, parcel registry, property measurement engine, or deployed service. Do not mistake contracts or diagrams for implemented capabilities.
+**GEO-002 Stage A + Stage B slice (uncommitted, under architectural review).** This repository contains founding documents, a coordinate assertion contract with a dependency-free validator, and a sandbox-only Stage B vertical slice: browser map → pin → saved assertion → reopen/edit → observation draft → reviewable opportunity candidate with a dry-run VNN payload preview. It does not contain a live GPS engine, geocoder, parcel registry, property measurement engine, deployed service, or any production integration. No writes leave the browser's local storage.
 
 ## Coordinate assertion validation
 `src/coordinate-assertion.js` implements [contracts/geo-coordinate-assertion-v0.schema.json](contracts/geo-coordinate-assertion-v0.schema.json) as executable code. It is pure and provider-neutral: no I/O, no network calls, no coercion, no input mutation, and no fabricated values. `validateCoordinateAssertion(value)` returns `{ valid, errors }` where each error is `{ field, message }`.
@@ -16,13 +16,21 @@ import { validateCoordinateAssertion } from "./src/coordinate-assertion.js";
 ```
 
 ## Tests
-Requires Node.js >= 18.17. No dependencies.
+Requires Node.js >= 18.17. One devDependency: `leaflet@1.9.4` (BSD-2-Clause, pinned, vendored into `vendor/leaflet/`; installed with `--ignore-scripts`).
 
 ```sh
 npm test
 ```
 
-Runs `node --test` against `test/`, covering boundary coordinates, non-finite values, source attribution, unknown accuracy, timestamps, and no fabricated certainty.
+Runs `node --test` against `test/`: Stage A contract tests plus Stage B store/provenance/observation/candidate/dry-run tests.
+
+## Stage B demo (local only)
+
+```sh
+npm run stage-b   # serves http://127.0.0.1:8734/stage-b
+```
+
+The slice uses OpenStreetMap public tiles for bounded development testing only — not a production tile decision. Manual coordinate entry works when tiles or geolocation are unavailable. Saved assertions persist in `localStorage` under `h1geo.stageb.*`; corrupted data is quarantined, never silently repaired. Candidates produce dry-run payload previews only — nothing is sent to VNN.
 
 ## Read first
 - [Founding charter](docs/FOUNDING_CHARTER.md)
