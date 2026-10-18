@@ -9,6 +9,9 @@ import { createRecordStore } from "./record-store.js";
 import { createObservation, validateObservation, OBSERVATION_STORE_KEY } from "./observation.js";
 import { createEvidenceLink } from "./evidence.js";
 import { createEvidenceStore } from "./evidence-store.js";
+import { createHandoffRecord, resolveReviewState } from "./handoff.js";
+import { createHandoffStore } from "./handoff-store.js";
+import { fingerprint } from "./fingerprint.js";
 import { createCandidate, transitionCandidateStatus } from "./candidate.js";
 import { createCandidateStore } from "./candidate-store.js";
 import { buildVnnDryRunPayload, validateVnnDryRunPayload } from "./vnn-dryrun.js";
@@ -26,6 +29,7 @@ const observationStore = createRecordStore({
 });
 const candidateStore = createCandidateStore(window.localStorage);
 const evidenceStore = createEvidenceStore(window.localStorage, { assertionStore, observationStore });
+const handoffStore = createHandoffStore(window.localStorage, { candidateStore });
 
 let draft = null; // { latitude, longitude, source, accuracyMeters }
 let selectedId = null;
@@ -413,6 +417,54 @@ function renderCandidates(id) {
     pre.className = "payload";
     pre.textContent = JSON.stringify(payload, null, 2) + (check.valid ? "" : `\nINVALID: ${JSON.stringify(check.errors)}`);
     li.appendChild(pre);
+
+    // GEO-007 review controls — approval binds to this exact draft version.
+    const fp = fingerprint(c.record);
+    const review = resolveReviewState(handoffStore.forDraft(c.id), fp);
+    const reviewLine = document.createElement("p");
+    reviewLine.className = "hint";
+    reviewLine.textContent = `Review: ${review.state}${review.record ? ` — ${review.record.decision} by ${review.record.decidedBy} at ${review.record.decidedAt}` : ""}`;
+    li.appendChild(reviewLine);
+    if (review.state === "stale") {
+      const stale = document.createElement("p");
+      stale.className = "stale";
+      stale.textContent = "Draft changed after the last decision — a new review is required before an updated handoff.";
+      li.appendChild(stale);
+    }
+    for (const decision of ["approved", "declined"]) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.textContent = decision === "approved" ? "Approve handoff" : "Decline handoff";
+      btn.addEventListener("click", () => {
+        const record = createHandoffRecord({
+          draftId: c.id,
+          candidate: c.record,
+          payload,
+          decision,
+          decidedBy: $("h-decidedby").value.trim(),
+        });
+        const result = handoffStore.save(record);
+        if (!result.ok) {
+          notice(`Review not recorded: ${result.errors.map((e) => `${e.field} ${e.message}`).join("; ")}`, "error");
+          return;
+        }
+        notice(decision === "approved"
+          ? `Handoff record ${result.id} created — local, reviewable, dry-run only.`
+          : `Decline recorded (${result.id}).`);
+        renderCandidates(id);
+      });
+      li.appendChild(btn);
+    }
+    for (const h of handoffStore.forDraft(c.id)) {
+      const hp = document.createElement("pre");
+      hp.className = "payload";
+      hp.textContent = `handoff ${h.id} — ${h.record.decision} by ${h.record.decidedBy}\n` +
+        `decidedAt ${h.record.decidedAt} · draft fp ${h.record.draftFingerprint}` +
+        `${h.record.draftFingerprint === fp ? " (current)" : " (STALE)"}` +
+        (h.record.missingAtDecision.length ? `\nmissing at decision: ${h.record.missingAtDecision.join(", ")}` : "") +
+        (h.record.payload ? `\n${JSON.stringify(h.record.payload.intake, null, 2)}` : "");
+      li.appendChild(hp);
+    }
     wrap.appendChild(li);
   }
 }
@@ -423,6 +475,7 @@ for (const [name, store] of [
   ["observations", observationStore],
   ["candidates", candidateStore],
   ["evidence links", evidenceStore],
+  ["handoff records", handoffStore],
 ]) {
   const h = store.health();
   if (h.corrupted) notice(`${QUARANTINE_MESSAGE} (${name}: ${h.invalidEntryCount} invalid entr${h.invalidEntryCount === 1 ? "y" : "ies"})`, "warn");

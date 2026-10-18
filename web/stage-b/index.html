@@ -32,6 +32,7 @@
     pre.payload { background: #f4f4f4; border: 1px solid #ddd; padding: 6px; font-size: 11px; overflow-x: auto; }
     .h1geo-pin span { display: block; width: 18px; height: 18px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 2px #000; }
     .hint { color: #555; font-size: 12px; }
+    .stale { color: #842029; font-weight: 600; font-size: 12px; }
   </style>
 </head>
 <body>
@@ -140,8 +141,10 @@
             </div>
           </div>
           <button id="btn-candidate" type="button">Create draft (unverified)</button>
+          <label for="h-decidedby">Reviewer name (required for approve/decline)</label>
+          <input id="h-decidedby" placeholder="who is reviewing" />
           <ul id="cand-list"></ul>
-          <p class="hint">Payload previews are dry-run only — nothing is sent to VNN.</p>
+          <p class="hint">Approving creates a local handoff record bound to this draft version. Payload previews are dry-run only — nothing is sent to VNN.</p>
         </fieldset>
       </fieldset>
     </aside>
