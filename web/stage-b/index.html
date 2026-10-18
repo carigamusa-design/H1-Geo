@@ -143,11 +143,19 @@
           <button id="btn-candidate" type="button">Create draft (unverified)</button>
           <label for="h-decidedby">Reviewer name (required for approve/decline)</label>
           <input id="h-decidedby" placeholder="who is reviewing" />
+          <button id="btn-candidate" type="button">Create draft (unverified)</button>
+          <label for="h-decidedby">Reviewer name (required for approve/decline)</label>
+          <input id="h-decidedby" placeholder="who is reviewing" />
           <ul id="cand-list"></ul>
           <p class="hint">Approving creates a local handoff record bound to this draft version. Payload previews are dry-run only — nothing is sent to VNN.</p>
         </fieldset>
-      </fieldset>
-    </aside>
+
+        <fieldset>
+          <legend>7. Import handoff package</legend>
+          <label for="pkg-import">Package JSON</label>
+          <textarea id="pkg-import" rows="4" placeholder='{"schemaVersion":"h1-geo/vnn-handoff-package-v0",...}'></textarea>
+          <button id="btn-pkg-import" type="button">Verify package</button>
+        </fieldset>
   </main>
   <script src="../../vendor/leaflet/leaflet.js"></script>
   <script type="module" src="../../src/stage-b/app.js"></script>

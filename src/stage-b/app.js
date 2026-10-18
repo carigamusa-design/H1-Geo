@@ -12,6 +12,13 @@ import { createEvidenceStore } from "./evidence-store.js";
 import { createHandoffRecord, resolveReviewState } from "./handoff.js";
 import { createHandoffStore } from "./handoff-store.js";
 import { fingerprint } from "./fingerprint.js";
+import {
+  createHandoffPackage,
+  exportPackageJson,
+  importAndVerifyPackage,
+  validatePackageStructure,
+  PACKAGE_STORE_KEY,
+} from "./handoff-package.js";
 import { createCandidate, transitionCandidateStatus } from "./candidate.js";
 import { createCandidateStore } from "./candidate-store.js";
 import { buildVnnDryRunPayload, validateVnnDryRunPayload } from "./vnn-dryrun.js";
@@ -30,6 +37,12 @@ const observationStore = createRecordStore({
 const candidateStore = createCandidateStore(window.localStorage);
 const evidenceStore = createEvidenceStore(window.localStorage, { assertionStore, observationStore });
 const handoffStore = createHandoffStore(window.localStorage, { candidateStore });
+const packageStore = createRecordStore({
+  storage: window.localStorage,
+  key: PACKAGE_STORE_KEY,
+  validate: validatePackageStructure,
+  idPrefix: "pkg",
+});
 
 let draft = null; // { latitude, longitude, source, accuracyMeters }
 let selectedId = null;
@@ -465,9 +478,68 @@ function renderCandidates(id) {
         (h.record.payload ? `\n${JSON.stringify(h.record.payload.intake, null, 2)}` : "");
       li.appendChild(hp);
     }
+
+    // GEO-008: approved drafts can produce an exportable, digest-sealed package.
+    if (review.state === "approved") {
+      const pkgBtn = document.createElement("button");
+      pkgBtn.type = "button";
+      pkgBtn.textContent = "Generate handoff package";
+      pkgBtn.addEventListener("click", async () => {
+        const result = await createHandoffPackage({
+          draftId: c.id,
+          candidateStore,
+          assertionStore,
+          evidenceStore,
+          handoffStore,
+        });
+        if (!result.ok) {
+          notice(`Package not created: ${result.errors.map((e) => `${e.field} ${e.message}`).join("; ")}`, "error");
+          return;
+        }
+        packageStore.save(result.package);
+        notice(`Package ${result.package.packageId} generated (sha256 ${result.package.sha256.slice(0, 12)}…, readyForIntake=${result.package.content.readyForIntake}).`);
+        renderCandidates(id);
+      });
+      li.appendChild(pkgBtn);
+    }
+    for (const p of packageStore.list().filter((p) => p.record.content?.draftId === c.id)) {
+      const pp = document.createElement("div");
+      const title = document.createElement("p");
+      title.className = "hint";
+      title.textContent = `package ${p.record.packageId} — ready=${p.record.content.readyForIntake} · sha256 ${p.record.sha256.slice(0, 16)}…`;
+      pp.appendChild(title);
+      const dl = document.createElement("button");
+      dl.type = "button";
+      dl.textContent = "Export package JSON";
+      dl.addEventListener("click", () => {
+        const blob = new Blob([exportPackageJson(p.record)], { type: "application/json" });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = `${p.record.packageId}.json`;
+        a.click();
+        URL.revokeObjectURL(a.href);
+      });
+      pp.appendChild(dl);
+      const pre = document.createElement("pre");
+      pre.className = "payload";
+      pre.textContent = JSON.stringify(p.record.content, null, 2);
+      pp.appendChild(pre);
+      wrap.appendChild(pp);
+    }
     wrap.appendChild(li);
   }
 }
+
+$("btn-pkg-import").addEventListener("click", async () => {
+  const text = $("pkg-import").value;
+  const result = await importAndVerifyPackage(text, { assertionStore, candidateStore });
+  if (result.ok) {
+    const c = result.package.content;
+    notice(`Package ${result.package.packageId} verified — digest matches, intake ${c.readyForIntake ? "complete" : `missing: ${c.missing.join(", ")}`}.`, "info");
+  } else {
+    notice(`Package rejected: ${result.errors.map((e) => `${e.field} ${e.message}`).join("; ")}`, "error");
+  }
+});
 
 // Startup health check: corrupted storage is surfaced, never silently repaired.
 for (const [name, store] of [
