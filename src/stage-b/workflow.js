@@ -19,7 +19,7 @@ import { assessHandoffReadiness } from "./vnn-dryrun.js";
  */
 export function isSyntheticRecord(record) {
   if (!record || typeof record !== "object") return false;
-  const haystack = [record.provenanceRef, record.notes, record.summary,
+  const haystack = [record.provenanceRef, record.notes, record.note, record.summary,
     record.title, record.condition, record.proposedWork]
     .filter((v) => typeof v === "string").join("\n");
   return /synthetic|h1geo:\/\/example/i.test(haystack);

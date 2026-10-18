@@ -231,6 +231,41 @@
           <button id="btn-bk-restore" type="button">Restore (replaces all saved work)</button>
           <p class="hint">Restore validates the whole file first — digest, per-record contracts, and every cross-reference — then replaces all saved work. Nothing is written if validation fails.</p>
         </fieldset>
+
+        <fieldset>
+          <legend>11. Pilot ops &amp; feedback</legend>
+          <p id="pilot-report" class="kv"></p>
+          <div id="pilot-actions"></div>
+          <p class="hint">Record what worked, what confused you, what failed, and what should improve. Feedback can point at a workflow step or a saved record.</p>
+          <div class="row">
+            <div>
+              <label for="fb-kind">Kind</label>
+              <select id="fb-kind">
+                <option value="worked">worked</option>
+                <option value="confusing">confusing</option>
+                <option value="failed">failed</option>
+                <option value="improve">should improve</option>
+              </select>
+            </div>
+            <div>
+              <label for="fb-target">About</label>
+              <select id="fb-target">
+                <option value="none">general</option>
+                <option value="workflow_step">workflow step</option>
+                <option value="assertion">a location</option>
+                <option value="observation">an observation</option>
+                <option value="draft">a draft</option>
+                <option value="package">a package</option>
+              </select>
+            </div>
+          </div>
+          <label for="fb-ref">Target</label>
+          <select id="fb-ref"></select>
+          <label for="fb-body">What happened</label>
+          <textarea id="fb-body" rows="2" placeholder="describe it plainly…"></textarea>
+          <button id="btn-feedback" type="button">Save feedback</button>
+          <ul id="fb-list"></ul>
+        </fieldset>
   </main>
   <script src="../../vendor/leaflet/leaflet.js"></script>
   <script type="module" src="../../src/stage-b/app.js"></script>

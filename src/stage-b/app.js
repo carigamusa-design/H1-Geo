@@ -37,8 +37,9 @@ import {
 import { workflowStatus, loadH1ExampleScenario, isSyntheticRecord,
   draftIndex, filterDrafts, STAGE_LABELS } from "./workflow.js";
 import { createBackup, validateBackup, restoreBackup } from "./backup.js";
+import { createFeedbackStore, createFeedback, pilotReport,
+  validateFeedback } from "./pilot.js";
 import { validateCoordinateAssertion } from "../coordinate-assertion.js";
-import { validateObservation } from "./observation.js";
 import { validateCandidate } from "./candidate.js";
 import { validateEvidenceLink } from "./evidence.js";
 import { validateHandoffRecord } from "./handoff.js";
@@ -79,6 +80,9 @@ const exportStore = createRecordStore({
   idPrefix: "vex",
 });
 let signerKey = null;
+const feedbackStore = createFeedbackStore(window.localStorage, {
+  assertionStore, observationStore, candidateStore, packageStore,
+});
 
 let draft = null; // { latitude, longitude, source, accuracyMeters }
 let selectedId = null;
@@ -392,7 +396,100 @@ function renderProgress() {
     el.appendChild(detail);
     steps.appendChild(el);
   });
+  renderPilot();
 }
+
+// GEO-012: pilot ops — live counts, next actions, feedback list.
+function renderPilot() {
+  const rep = pilotReport({
+    assertionStore, observationStore, evidenceStore, candidateStore,
+    handoffStore, packageStore, signatureStore, exportStore, feedbackStore,
+  });
+  const fmt2 = (s) => `${s.total} (${s.real} real / ${s.synthetic} synthetic)`;
+  $("pilot-report").textContent =
+    `locations ${fmt2(rep.locations)} · observations ${fmt2(rep.observations)} · ` +
+    `evidence ${fmt2(rep.evidenceLinks)} · drafts ${fmt2(rep.drafts)} · ` +
+    `approved ${rep.approvals.approved} · stale ${rep.approvals.stale} · ` +
+    `declined ${rep.approvals.declined} · packages ${rep.packages} · ` +
+    `signed ${rep.signatures} · exports ${rep.exports} · feedback ${rep.feedback.total}`;
+  const acts = $("pilot-actions");
+  acts.replaceChildren();
+  for (const a of rep.nextActions) {
+    const p = document.createElement("p");
+    p.className = "hint";
+    p.textContent = `${a.title}: ${a.action}`;
+    acts.appendChild(p);
+  }
+  // Feedback target picker.
+  const refSel = $("fb-ref");
+  refSel.replaceChildren();
+  const tt = $("fb-target").value;
+  if (tt === "workflow_step") {
+    STAGE_LABELS.forEach((label, i) => {
+      const o = document.createElement("option");
+      o.value = String(i + 1);
+      o.textContent = `${i + 1}. ${label}`;
+      refSel.appendChild(o);
+    });
+  } else if (tt !== "none") {
+    const store = { assertion: assertionStore, observation: observationStore,
+      draft: candidateStore, package: packageStore }[tt];
+    for (const e of store.list()) {
+      const o = document.createElement("option");
+      o.value = e.id;
+      o.textContent = tt === "draft"
+        ? (e.record.title || e.record.summary)
+        : tt === "assertion" ? `${e.record.source} ${fmt(e.record.latitude)},${fmt(e.record.longitude)}`
+        : e.id;
+      refSel.appendChild(o);
+    }
+    if (!refSel.children.length) {
+      const o = document.createElement("option");
+      o.value = "";
+      o.textContent = `(no saved ${tt}s)`;
+      refSel.appendChild(o);
+    }
+  } else {
+    const o = document.createElement("option");
+    o.value = "";
+    o.textContent = "—";
+    refSel.appendChild(o);
+  }
+  // Feedback list, newest first.
+  const list = $("fb-list");
+  list.replaceChildren();
+  for (const e of feedbackStore.list().slice().reverse()) {
+    const li = document.createElement("li");
+    const p = document.createElement("p");
+    p.className = "hint";
+    p.textContent = `[${e.record.kind}] ${e.record.body}` +
+      (e.record.targetType !== "none"
+        ? ` — on ${e.record.targetType === "workflow_step" ? `step ${e.record.step}` : e.record.targetId}`
+        : "") + ` (${e.record.createdAt.slice(0, 16)}Z)`;
+    li.appendChild(p);
+    list.appendChild(li);
+  }
+}
+
+$("fb-target").addEventListener("change", renderPilot);
+$("btn-feedback").addEventListener("click", () => {
+  const tt = $("fb-target").value;
+  const rec = createFeedback({
+    kind: $("fb-kind").value,
+    body: $("fb-body").value,
+    targetType: tt,
+    targetId: tt === "workflow_step" ? null : ($("fb-ref").value || null),
+    step: tt === "workflow_step" ? Number($("fb-ref").value) : null,
+  });
+  const result = feedbackStore.save(rec);
+  if (!result.ok) {
+    notice(`Feedback not saved: ${result.errors.map((e) => `${e.field} ${e.message}`).join("; ")}`, "error");
+    return;
+  }
+  $("fb-body").value = "";
+  notice("Feedback recorded — thank you.");
+  renderPilot();
+});
 
 function renderDetail(id) {
   selectedId = id;
@@ -753,6 +850,11 @@ const BACKUP_SPECS = () => [
   { name: "exports", store: exportStore, validate: validateVnnIntakeExport,
     save: (r, id) => exportStore.save(r, { id }),
     refs: [{ field: "packageRef.sha256", valuesFrom: { store: "packages", path: "sha256" } }] },
+  { name: "feedback", store: feedbackStore, validate: validateFeedback,
+    save: (r, id) => feedbackStore.save(r, { id }),
+    refs: [{ field: "targetId",
+      intoBy: (rec) => ({ assertion: ["assertions"], observation: ["observations"],
+        draft: ["candidates"], package: ["packages"] }[rec.targetType] || []) }] },
 ];
 
 let pendingBackup = null;
