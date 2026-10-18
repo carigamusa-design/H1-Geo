@@ -34,6 +34,7 @@ import {
   validateVnnIntakeExport,
   VNN_EXPORT_STORE_KEY,
 } from "./vnn-export.js";
+import { workflowStatus, loadH1ExampleScenario, STAGE_LABELS } from "./workflow.js";
 import { createCandidate, transitionCandidateStatus } from "./candidate.js";
 import { createCandidateStore } from "./candidate-store.js";
 import { buildVnnDryRunPayload, validateVnnDryRunPayload } from "./vnn-dryrun.js";
@@ -306,6 +307,33 @@ function refreshList() {
   list.querySelectorAll(".pin-item").forEach((btn) =>
     btn.addEventListener("click", () => renderDetail(btn.dataset.id)),
   );
+  renderProgress();
+}
+
+// GEO-010: "where you are" strip — computed from the stores, plain language.
+function renderProgress() {
+  const status = workflowStatus({
+    assertionStore, observationStore, evidenceStore, candidateStore,
+    handoffStore, packageStore, signatureStore, exportStore,
+  }, selectedId);
+  $("progress-summary").textContent = status.summary;
+  $("resume-line").textContent =
+    `Saved work on this machine: ${status.assertions.length} location(s), ` +
+    `${observationStore.list().length} observation(s), ` +
+    `${candidateStore.list().length} draft(s), ` +
+    `${packageStore.list().length} package(s). Everything survives a refresh.`;
+  const steps = $("steps");
+  steps.replaceChildren();
+  const nextIdx = status.stages.findIndex((s) => !s.done);
+  status.stages.forEach((s, i) => {
+    const el = document.createElement("span");
+    el.className = "step" + (s.done ? " done" : i === nextIdx ? " now" : "");
+    el.textContent = `${i + 1}. ${STAGE_LABELS[i]}`;
+    const detail = document.createElement("small");
+    detail.textContent = s.detail;
+    el.appendChild(detail);
+    steps.appendChild(el);
+  });
 }
 
 function renderDetail(id) {
@@ -636,7 +664,21 @@ function renderCandidates(id) {
     }
     wrap.appendChild(li);
   }
+  renderProgress();
 }
+
+$("btn-example").addEventListener("click", () => {
+  const result = loadH1ExampleScenario({
+    assertionStore, observationStore, evidenceStore, candidateStore,
+  });
+  if (!result.ok) {
+    notice(`Example not loaded: ${result.errors.map((e) => `${e.what} ${(e.errors || []).map((x) => x.message).join("; ")}`).join("; ")}`, "error");
+    return;
+  }
+  notice(result.label, "info");
+  refreshList();
+  renderDetail(result.assertionId);
+});
 
 $("btn-keygen").addEventListener("click", async () => {
   if (!(await ed25519Available())) {
@@ -671,4 +713,6 @@ for (const [name, store] of [
 }
 
 $("f-provenance").value = defaultProvenanceRef();
+// Default the signer/reviewer name for the demo user; it remains editable.
+if (!$("t-signer").value) $("t-signer").value = $("h-decidedby").value || "";
 refreshList();

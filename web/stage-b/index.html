@@ -33,6 +33,12 @@
     .h1geo-pin span { display: block; width: 18px; height: 18px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 2px #000; }
     .hint { color: #555; font-size: 12px; }
     .stale { color: #842029; font-weight: 600; font-size: 12px; }
+    #progress { padding: 6px 12px; border-bottom: 1px solid #ddd; }
+    .steps { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+    .step { padding: 2px 8px; border-radius: 10px; font-size: 11px; background: #eee; color: #555; }
+    .step.done { background: #d1e7dd; color: #0f5132; }
+    .step.now { background: #cfe2ff; color: #084298; }
+    .step small { display: block; font-weight: 400; }
   </style>
 </head>
 <body>
@@ -40,9 +46,16 @@
     <strong>H1-Geo Stage B</strong> — pin → assertion → observation → candidate (dry-run only, no live VNN/HomeVault writes)
   </header>
   <div id="notice" class="notice" hidden></div>
+  <div id="progress"><span id="progress-summary" class="hint">Loading…</span><div id="steps" class="steps"></div></div>
   <main>
     <div id="map" role="application" aria-label="Map"></div>
     <aside>
+      <fieldset>
+        <legend>0. Start here</legend>
+        <p id="resume-line" class="hint"></p>
+        <button id="btn-example" type="button">Load H1 example (synthetic)</button>
+        <p class="hint">Loads a clearly-labeled synthetic scenario — a storm-damaged residential fence — through the same save path you'd use yourself. Everything it creates is marked SYNTHETIC.</p>
+      </fieldset>
       <fieldset>
         <legend>1. New pin</legend>
         <p class="hint">Click the map for a <em>manual target pin</em>, or use device position. Source is never silently substituted.</p>
