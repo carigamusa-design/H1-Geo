@@ -12,6 +12,19 @@ import { resolveReviewState } from "./handoff.js";
 import { fingerprint } from "./fingerprint.js";
 import { assessHandoffReadiness } from "./vnn-dryrun.js";
 
+/**
+ * A record is synthetic when the example loader marked it — via the
+ * h1geo://example provenance prefix or an explicit SYNTHETIC tag in its
+ * human-readable text fields. Real observations are simply unmarked.
+ */
+export function isSyntheticRecord(record) {
+  if (!record || typeof record !== "object") return false;
+  const haystack = [record.provenanceRef, record.notes, record.summary,
+    record.title, record.condition, record.proposedWork]
+    .filter((v) => typeof v === "string").join("\n");
+  return /synthetic|h1geo:\/\/example/i.test(haystack);
+}
+
 export const STAGE_LABELS = [
   "Save a location",
   "Record an observation",
@@ -117,6 +130,66 @@ export function workflowStatus(stores, selectedId = null) {
   else summary = "Complete: approved, packaged, signed, and a confirmed local export record.";
 
   return { assertions, observations, evidenceLinks, draftStates, stages, summary };
+}
+
+/**
+ * Flat, filterable view of every draft across all locations — the
+ * "drafts overview" model. Each row carries location coords, evidence
+ * completeness, review state, and package/sign/export presence.
+ */
+export function draftIndex(stores) {
+  const {
+    assertionStore, candidateStore, evidenceStore, handoffStore,
+    packageStore, signatureStore, exportStore, observationStore,
+  } = stores;
+  return candidateStore.list().map((c) => {
+    const a = assertionStore.get(c.record.assertionId);
+    const obsIds = new Set(
+      observationStore.list().filter((o) => o.record.assertionId === c.record.assertionId).map((o) => o.id));
+    const evidenceCount = evidenceStore.list().filter((e) =>
+      (e.record.targetType === "assertion" && e.record.targetId === c.record.assertionId) ||
+      (e.record.targetType === "observation" && obsIds.has(e.record.targetId))).length;
+    const assertion = a ? a.record : null;
+    const missing = assessHandoffReadiness({ candidate: c.record, assertion });
+    const review = resolveReviewState(handoffStore.forDraft(c.id), fingerprint(c.record));
+    const pkgs = packageStore ? packageStore.list().filter((p) => p.record.content?.draftId === c.id) : [];
+    const sigs = signatureStore ? signatureStore.list().filter((s) =>
+      pkgs.some((p) => p.record.sha256 === s.record.signedHash)) : [];
+    const exps = exportStore ? exportStore.list().filter((e) =>
+      pkgs.some((p) => p.record.sha256 === e.record.packageRef?.sha256)) : [];
+    return {
+      id: c.id, candidate: c.record, assertion,
+      latitude: assertion ? assertion.latitude : null,
+      longitude: assertion ? assertion.longitude : null,
+      evidenceCount, missing, review,
+      packages: pkgs, signatures: sigs, exports: exps,
+      synthetic: isSyntheticRecord(c.record) || (assertion ? isSyntheticRecord(assertion) : false),
+    };
+  });
+}
+
+/**
+ * Filter a draftIndex result.
+ *   { status: "all"|"unreviewed"|"approved"|"declined"|"stale",
+ *     evidence: "all"|"linked"|"none",
+ *     assertionId: null | id (scope to one location),
+ *     query: substring over title/summary/coords }
+ */
+export function filterDrafts(rows, { status = "all", evidence = "all", assertionId = null, query = "" } = {}) {
+  const q = query.trim().toLowerCase();
+  return rows.filter((r) => {
+    if (assertionId && r.candidate.assertionId !== assertionId) return false;
+    if (status !== "all" && r.review.state !== status) return false;
+    if (evidence === "linked" && r.evidenceCount === 0) return false;
+    if (evidence === "none" && r.evidenceCount > 0) return false;
+    if (q) {
+      const hay = [r.candidate.title, r.candidate.summary,
+        r.latitude, r.longitude].filter((v) => v !== null && v !== undefined)
+        .join(" ").toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
 }
 
 /**

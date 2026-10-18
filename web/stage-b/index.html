@@ -84,6 +84,8 @@
 
       <fieldset>
         <legend>2. Saved assertions</legend>
+        <label for="pin-filter">Filter saved pins</label>
+        <input id="pin-filter" placeholder="source, coordinates, provenance…" />
         <ul id="pin-list"></ul>
       </fieldset>
 
@@ -179,6 +181,55 @@
           <label for="t-requester">VNN requester_ref (for export)</label>
           <input id="t-requester" placeholder="e.g. h1geo://reviewer/self" />
           <p class="hint">Integrity, signature validity, signer authorization, and evidence authenticity are reported separately — a valid signature alone does not establish the rest. Export records stay local; nothing is submitted to VNN.</p>
+        </fieldset>
+
+        <fieldset>
+          <legend>9. Drafts overview</legend>
+          <div class="row">
+            <div>
+              <label for="d-status">Review state</label>
+              <select id="d-status">
+                <option value="all">all</option>
+                <option value="unreviewed">unreviewed</option>
+                <option value="approved">approved</option>
+                <option value="declined">declined</option>
+                <option value="stale">stale</option>
+              </select>
+            </div>
+            <div>
+              <label for="d-evidence">Evidence</label>
+              <select id="d-evidence">
+                <option value="all">all</option>
+                <option value="linked">has links</option>
+                <option value="none">no links</option>
+              </select>
+            </div>
+          </div>
+          <div class="row">
+            <div>
+              <label for="d-scope">Scope</label>
+              <select id="d-scope">
+                <option value="all">all locations</option>
+                <option value="selected">selected pin only</option>
+              </select>
+            </div>
+            <div>
+              <label for="d-query">Search</label>
+              <input id="d-query" placeholder="title, summary, coords…" />
+            </div>
+          </div>
+          <div id="draft-rows"></div>
+        </fieldset>
+
+        <fieldset>
+          <legend>10. Backup &amp; restore</legend>
+          <button id="btn-backup" type="button">Download backup</button>
+          <label for="bk-import">Backup JSON</label>
+          <textarea id="bk-import" rows="4" placeholder='{"schemaVersion":"h1-geo/working-records-backup-v0",...}'></textarea>
+          <button id="btn-bk-validate" type="button">Validate backup</button>
+          <div id="bk-result" class="hint"></div>
+          <button id="btn-bk-restore" type="button">Restore (replaces all saved work)</button>
+          <p class="hint">Restore validates the whole file first — digest, per-record contracts, and every cross-reference — then replaces all saved work. Nothing is written if validation fails.</p>
         </fieldset>
   </main>
   <script src="../../vendor/leaflet/leaflet.js"></script>

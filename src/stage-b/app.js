@@ -34,7 +34,14 @@ import {
   validateVnnIntakeExport,
   VNN_EXPORT_STORE_KEY,
 } from "./vnn-export.js";
-import { workflowStatus, loadH1ExampleScenario, STAGE_LABELS } from "./workflow.js";
+import { workflowStatus, loadH1ExampleScenario, isSyntheticRecord,
+  draftIndex, filterDrafts, STAGE_LABELS } from "./workflow.js";
+import { createBackup, validateBackup, restoreBackup } from "./backup.js";
+import { validateCoordinateAssertion } from "../coordinate-assertion.js";
+import { validateObservation } from "./observation.js";
+import { validateCandidate } from "./candidate.js";
+import { validateEvidenceLink } from "./evidence.js";
+import { validateHandoffRecord } from "./handoff.js";
 import { createCandidate, transitionCandidateStatus } from "./candidate.js";
 import { createCandidateStore } from "./candidate-store.js";
 import { buildVnnDryRunPayload, validateVnnDryRunPayload } from "./vnn-dryrun.js";
@@ -290,7 +297,13 @@ $("btn-candidate").addEventListener("click", () => {
 function refreshList() {
   const list = $("pin-list");
   list.replaceChildren();
+  const pinQuery = ($("pin-filter") ? $("pin-filter").value : "").trim().toLowerCase();
   for (const { id, record, savedAt, updatedAt } of assertionStore.list()) {
+    if (pinQuery) {
+      const hay = [record.source, record.latitude, record.longitude,
+        record.provenanceRef, record.notes].join(" ").toLowerCase();
+      if (!hay.includes(pinQuery)) continue;
+    }
     const li = document.createElement("li");
     const btn = document.createElement("button");
     btn.type = "button";
@@ -298,6 +311,10 @@ function refreshList() {
     btn.dataset.id = id;
     const strong = document.createElement("strong");
     strong.textContent = record.source;
+    const tag = document.createElement("span");
+    tag.className = "hint";
+    tag.textContent = isSyntheticRecord(record) ? " [SYNTHETIC]" : " [real]";
+    strong.appendChild(tag);
     const small = document.createElement("small");
     small.textContent = `saved ${savedAt}${updatedAt !== savedAt ? " · edited" : ""}`;
     btn.append(strong, ` ${fmt(record.latitude)}, ${fmt(record.longitude)}`, small);
@@ -307,7 +324,48 @@ function refreshList() {
   list.querySelectorAll(".pin-item").forEach((btn) =>
     btn.addEventListener("click", () => renderDetail(btn.dataset.id)),
   );
+  renderDraftOverview();
   renderProgress();
+}
+
+// GEO-011: filterable overview of every draft across all locations.
+function renderDraftOverview() {
+  const box = $("draft-rows");
+  if (!box) return;
+  box.replaceChildren();
+  const rows = filterDrafts(draftIndex({
+    assertionStore, observationStore, evidenceStore, candidateStore,
+    handoffStore, packageStore, signatureStore, exportStore,
+  }), {
+    status: $("d-status").value,
+    evidence: $("d-evidence").value,
+    assertionId: $("d-scope").value === "selected" ? selectedId : null,
+    query: $("d-query").value,
+  });
+  if (!rows.length) {
+    const p = document.createElement("p");
+    p.className = "hint";
+    p.textContent = "No drafts match these filters.";
+    box.appendChild(p);
+    return;
+  }
+  for (const r of rows) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "pin-item";
+    const strong = document.createElement("strong");
+    strong.textContent = r.candidate.title || r.candidate.summary;
+    const small = document.createElement("small");
+    small.textContent =
+      `${r.latitude !== null ? `${fmt(r.latitude)}, ${fmt(r.longitude)}` : "(no location)"} · ` +
+      `${r.review.state}${r.missing.length ? ` · missing: ${r.missing.join(", ")}` : " · intake complete"} · ` +
+      `evidence ${r.evidenceCount}` +
+      `${r.packages.length ? " · packaged" : ""}${r.signatures.length ? " · signed" : ""}${r.exports.length ? " · exported" : ""}` +
+      `${r.synthetic ? " · SYNTHETIC" : ""}`;
+    btn.append(strong, small);
+    btn.addEventListener("click", () => renderDetail(r.candidate.assertionId));
+    box.appendChild(btn);
+  }
 }
 
 // GEO-010: "where you are" strip — computed from the stores, plain language.
@@ -665,6 +723,79 @@ function renderCandidates(id) {
     wrap.appendChild(li);
   }
   renderProgress();
+}
+
+// GEO-011: backup & restore — spec mirrors the real store set.
+const BACKUP_SPECS = () => [
+  { name: "assertions", store: assertionStore, validate: validateCoordinateAssertion,
+    save: (r, id) => assertionStore.save(r, { id }) },
+  { name: "observations", store: observationStore, validate: validateObservation,
+    save: (r, id) => observationStore.save(r, { id }),
+    refs: [{ field: "assertionId", into: ["assertions"] }] },
+  { name: "candidates", store: candidateStore, validate: validateCandidate,
+    save: (r, id) => candidateStore.save(r, { id }),
+    refs: [{ field: "assertionId", into: ["assertions"] },
+           { field: "observationId", into: ["observations"] }] },
+  { name: "evidence", store: evidenceStore, validate: validateEvidenceLink,
+    save: (r, id) => evidenceStore.save(r, { id }),
+    refs: [{ field: "targetId",
+      intoBy: (rec) => [rec.targetType === "observation" ? "observations" : "assertions"] }] },
+  { name: "handoffs", store: handoffStore, validate: validateHandoffRecord,
+    // append-only store: ids regenerate on restore; records keep draftId.
+    save: (r) => handoffStore.save(r),
+    refs: [{ field: "draftId", into: ["candidates"] }] },
+  { name: "packages", store: packageStore, validate: validatePackageStructure,
+    save: (r, id) => packageStore.save(r, { id }),
+    refs: [{ field: "content.draftId", into: ["candidates"] }] },
+  { name: "signatures", store: signatureStore, validate: validateSignatureRecord,
+    save: (r, id) => signatureStore.save(r, { id }),
+    refs: [{ field: "signedHash", valuesFrom: { store: "packages", path: "sha256" } }] },
+  { name: "exports", store: exportStore, validate: validateVnnIntakeExport,
+    save: (r, id) => exportStore.save(r, { id }),
+    refs: [{ field: "packageRef.sha256", valuesFrom: { store: "packages", path: "sha256" } }] },
+];
+
+let pendingBackup = null;
+$("btn-backup").addEventListener("click", async () => {
+  const doc = await createBackup(BACKUP_SPECS());
+  const blob = new Blob([JSON.stringify(doc, null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `h1geo-backup-${doc.createdAt.replace(/[:.]/g, "-")}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+$("btn-bk-validate").addEventListener("click", async () => {
+  const out = $("bk-result");
+  let doc;
+  try {
+    doc = JSON.parse($("bk-import").value);
+  } catch {
+    out.textContent = "Not valid JSON.";
+    return;
+  }
+  const check = await validateBackup(doc, BACKUP_SPECS());
+  pendingBackup = check.valid ? doc : null;
+  out.textContent = check.valid
+    ? `Valid backup: ${Object.entries(check.counts).map(([n, c]) => `${n}=${c}`).join(", ")}. Restore is armed.`
+    : `Invalid: ${check.errors.map((e) => `${e.field} ${e.message}`).join("; ")}`;
+});
+$("btn-bk-restore").addEventListener("click", async () => {
+  const out = $("bk-result");
+  if (!pendingBackup) { out.textContent = "Validate a backup first."; return; }
+  if (!window.confirm("Replace ALL saved H1-Geo work on this machine with this backup?")) return;
+  const result = await restoreBackup(pendingBackup, BACKUP_SPECS());
+  pendingBackup = null;
+  out.textContent = result.ok
+    ? `Restored: ${Object.entries(result.counts).map(([n, c]) => `${n}=${c}`).join(", ")}.`
+    : `Restore failed: ${result.errors.map((e) => `${e.field} ${e.message}`).join("; ")}`;
+  refreshList();
+  renderDetail(null);
+});
+
+for (const id of ["pin-filter", "d-status", "d-evidence", "d-scope", "d-query"]) {
+  $(id).addEventListener("input", () => { refreshList(); });
+  $(id).addEventListener("change", () => { refreshList(); });
 }
 
 $("btn-example").addEventListener("click", () => {
