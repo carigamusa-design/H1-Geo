@@ -37,6 +37,10 @@ import {
 import { workflowStatus, loadH1ExampleScenario, isSyntheticRecord,
   draftIndex, filterDrafts, STAGE_LABELS } from "./workflow.js";
 import { createBackup, validateBackup, restoreBackup } from "./backup.js";
+import { lookupTerritory, locationStatus, checkCountryMatch } from "../geo/territory.js";
+import { createSiteDescriptor, validateSiteDescriptor, SITE_STORE_KEY } from "../geo/site.js";
+import { explainDiscrepancy } from "../geo/site.js";
+import { TERRITORY_DATASET } from "./territory-data.js";
 import { createFeedbackStore, createFeedback, pilotReport,
   validateFeedback } from "./pilot.js";
 import { validateCoordinateAssertion } from "../coordinate-assertion.js";
@@ -82,6 +86,12 @@ const exportStore = createRecordStore({
 let signerKey = null;
 const feedbackStore = createFeedbackStore(window.localStorage, {
   assertionStore, observationStore, candidateStore, packageStore,
+});
+const siteStore = createRecordStore({
+  storage: window.localStorage,
+  key: SITE_STORE_KEY,
+  validate: validateSiteDescriptor,
+  idPrefix: "site",
 });
 
 let draft = null; // { latitude, longitude, source, accuracyMeters }
@@ -471,6 +481,72 @@ function renderPilot() {
   }
 }
 
+// GEO-012 (international): declared-country select from the dataset.
+{
+  const sel = $("geo-country");
+  const none = document.createElement("option");
+  none.value = "";
+  none.textContent = "(no declared country)";
+  sel.appendChild(none);
+  for (const f of TERRITORY_DATASET.features) {
+    const o = document.createElement("option");
+    o.value = f.iso;
+    o.textContent = `${f.iso} — ${f.name}`;
+    sel.appendChild(o);
+  }
+}
+
+$("btn-geo-check").addEventListener("click", () => {
+  const entry = selectedId ? assertionStore.get(selectedId) : null;
+  if (!entry) { $("geo-explain").textContent = "Select a saved pin first."; return; }
+  const match = checkCountryMatch({
+    latitude: entry.record.latitude, longitude: entry.record.longitude,
+    declaredIso: $("geo-country").value || null, dataset: TERRITORY_DATASET,
+  });
+  $("geo-explain").textContent = explainDiscrepancy(match);
+});
+
+function renderSiteList(assertionId) {
+  const list = $("site-list");
+  list.replaceChildren();
+  for (const e of siteStore.list().filter((s) => s.record.assertionId === assertionId)) {
+    const li = document.createElement("li");
+    const p = document.createElement("p");
+    p.className = "hint";
+    p.textContent = `${e.record.kind} — ${JSON.stringify(e.record.fields)}` +
+      `${e.record.declaredCountryCode ? ` · declared ${e.record.declaredCountryCode}` : ""} (source: ${e.record.source})`;
+    li.appendChild(p);
+    list.appendChild(li);
+  }
+}
+
+$("btn-site-save").addEventListener("click", () => {
+  if (!selectedId) { notice("Select a saved pin first.", "warn"); return; }
+  let fields = {};
+  const raw = $("site-fields").value.trim();
+  if (raw) {
+    try {
+      fields = JSON.parse(raw);
+    } catch {
+      notice("Fields must be valid JSON.", "error");
+      return;
+    }
+  }
+  const rec = createSiteDescriptor({
+    kind: $("site-kind").value,
+    assertionId: selectedId,
+    fields,
+    declaredCountryCode: $("geo-country").value || null,
+  });
+  const result = siteStore.save(rec);
+  if (!result.ok) {
+    notice(`Site not saved: ${result.errors.map((e) => `${e.field} ${e.message}`).join("; ")}`, "error");
+    return;
+  }
+  notice(`Site descriptor saved as "${rec.kind}" — a separate record; the point is unchanged.`);
+  renderSiteList(selectedId);
+});
+
 $("fb-target").addEventListener("change", renderPilot);
 $("btn-feedback").addEventListener("click", () => {
   const tt = $("fb-target").value;
@@ -510,6 +586,16 @@ function renderDetail(id) {
   $("e-lat").value = a.latitude;
   $("e-lng").value = a.longitude;
   $("e-accuracy").value = a.accuracyMeters ?? "";
+
+  // GEO-012 (international): territory + status for the selected point.
+  const terr = lookupTerritory(a.latitude, a.longitude, TERRITORY_DATASET);
+  const status = locationStatus({ assertion: a, territoryResult: terr });
+  $("geo-status").textContent = `status: ${status.status} — ${status.detail}`;
+  $("geo-territory").textContent = terr.ok && terr.found
+    ? `Inside ${terr.name} (${terr.iso}) at ${terr.resolution} · uncertainty ±${terr.uncertaintyMeters}m · source: ${terr.source}`
+    : `Territory unresolved — no dataset polygon contains this point (ocean, gap, or data limit). ${terr.ok ? "" : "Dataset error."}`;
+  $("geo-explain").textContent = "";
+  renderSiteList(id);
 
   adapter.panTo(a.latitude, a.longitude);
   adapter.showSaved({
@@ -855,6 +941,9 @@ const BACKUP_SPECS = () => [
     refs: [{ field: "targetId",
       intoBy: (rec) => ({ assertion: ["assertions"], observation: ["observations"],
         draft: ["candidates"], package: ["packages"] }[rec.targetType] || []) }] },
+  { name: "sites", store: siteStore, validate: validateSiteDescriptor,
+    save: (r, id) => siteStore.save(r, { id }),
+    refs: [{ field: "assertionId", into: ["assertions"] }] },
 ];
 
 let pendingBackup = null;

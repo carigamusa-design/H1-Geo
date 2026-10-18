@@ -104,6 +104,28 @@
         <button id="btn-save-edit" type="button">Save edit</button>
 
         <fieldset>
+          <legend>3a. Geographic accuracy</legend>
+          <p id="geo-status" class="kv"></p>
+          <p id="geo-territory" class="hint"></p>
+          <label for="geo-country">Declared country (optional)</label>
+          <select id="geo-country"></select>
+          <button id="btn-geo-check" type="button">Check point vs. declared country</button>
+          <p id="geo-explain" class="hint"></p>
+          <p class="hint">Country checks use Natural Earth 1:110m boundaries — country-level only, ~110m uncertainty. A point never establishes an address, jurisdiction, or parcel. Unresolved means the data can't say — not a guess.</p>
+          <label for="site-kind">Site descriptor (a different record — the point stays a point)</label>
+          <select id="site-kind">
+            <option value="point">point (the assertion itself)</option>
+            <option value="postal_address">postal_address</option>
+            <option value="building">building</option>
+            <option value="legal_parcel">legal_parcel</option>
+          </select>
+          <label for="site-fields">Fields (JSON, e.g. {"addressLine": "…", "locality": "…", "countryCode": "US"})</label>
+          <textarea id="site-fields" rows="3" placeholder='{"addressLine":"…","locality":"…","countryCode":"US"}'></textarea>
+          <button id="btn-site-save" type="button">Save site descriptor</button>
+          <ul id="site-list"></ul>
+        </fieldset>
+
+        <fieldset>
           <legend>4. Observation draft</legend>
           <label for="o-summary">Summary</label>
           <textarea id="o-summary" rows="2" placeholder="e.g. Fence appears damaged"></textarea>
