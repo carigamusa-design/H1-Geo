@@ -126,6 +126,22 @@
         </fieldset>
 
         <fieldset>
+          <legend>3b. Destination confirmation</legend>
+          <p id="dest-device" class="kv"></p>
+          <p id="dest-point" class="kv"></p>
+          <button id="btn-dest-device" type="button">Set destination to device estimate</button>
+          <button id="btn-dest-reset" type="button">Reset destination to saved pin</button>
+          <p class="hint">Drag the <b>red</b> destination pin to the intended property. Moving it never rewrites the original pin or device evidence.</p>
+          <p id="dest-ambiguity" class="kv"></p>
+          <p id="dest-confidence" class="hint"></p>
+          <label for="dest-by">Confirmed by</label>
+          <input id="dest-by" type="text" placeholder="operator name">
+          <button id="btn-dest-save" type="button">Confirm destination</button>
+          <ul id="dest-list"></ul>
+          <p class="hint">A confirmed destination is user-stated intent — never legal parcel, verified address, or ownership. Candidate data is synthetic fixture data unless a site descriptor says otherwise.</p>
+        </fieldset>
+
+        <fieldset>
           <legend>4. Observation draft</legend>
           <label for="o-summary">Summary</label>
           <textarea id="o-summary" rows="2" placeholder="e.g. Fence appears damaged"></textarea>

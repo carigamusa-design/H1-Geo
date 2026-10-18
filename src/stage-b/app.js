@@ -41,6 +41,10 @@ import { lookupTerritory, locationStatus, checkCountryMatch } from "../geo/terri
 import { createSiteDescriptor, validateSiteDescriptor, SITE_STORE_KEY } from "../geo/site.js";
 import { explainDiscrepancy } from "../geo/site.js";
 import { TERRITORY_DATASET } from "./territory-data.js";
+import { createDestinationConfirmation, validateDestinationConfirmation,
+  destinationConfirmedFor, assessAmbiguity, distanceMeters,
+  CONFIRM_STORE_KEY } from "../geo/property.js";
+import { PROPERTY_FIXTURES } from "./property-fixtures.js";
 import { createFeedbackStore, createFeedback, pilotReport,
   validateFeedback } from "./pilot.js";
 import { validateCoordinateAssertion } from "../coordinate-assertion.js";
@@ -93,10 +97,17 @@ const siteStore = createRecordStore({
   validate: validateSiteDescriptor,
   idPrefix: "site",
 });
+const confirmStore = createRecordStore({
+  storage: window.localStorage,
+  key: CONFIRM_STORE_KEY,
+  validate: validateDestinationConfirmation,
+  idPrefix: "conf",
+});
 
 let draft = null; // { latitude, longitude, source, accuracyMeters }
 let selectedId = null;
 let accuracyCircle = null;
+let destination = null; // user-confirmed destination point for the selected pin
 
 function notice(message, kind = "info") {
   const el = $("notice");
@@ -291,6 +302,15 @@ $("btn-candidate").addEventListener("click", () => {
     }
     notice(`Draft ${editingCandidateId} updated.`);
   } else {
+    // GEO-013: a destination confirmation is the expected step before
+    // preparing an opportunity; creating without one is an explicit,
+    // informed override — never silent.
+    if (!destinationConfirmedFor(confirmStore, selectedId) &&
+        !window.confirm("No destination confirmation exists for this pin (section 3b). " +
+          "A pin or GPS fix does not establish the intended property. " +
+          "Create the draft anyway?")) {
+      return;
+    }
     const base = createCandidate({
       assertionId: selectedId,
       observationId: latest ? latest.id : null,
@@ -414,6 +434,7 @@ function renderPilot() {
   const rep = pilotReport({
     assertionStore, observationStore, evidenceStore, candidateStore,
     handoffStore, packageStore, signatureStore, exportStore, feedbackStore,
+    confirmStore,
   });
   const fmt2 = (s) => `${s.total} (${s.real} real / ${s.synthetic} synthetic)`;
   $("pilot-report").textContent =
@@ -421,7 +442,8 @@ function renderPilot() {
     `evidence ${fmt2(rep.evidenceLinks)} · drafts ${fmt2(rep.drafts)} · ` +
     `approved ${rep.approvals.approved} · stale ${rep.approvals.stale} · ` +
     `declined ${rep.approvals.declined} · packages ${rep.packages} · ` +
-    `signed ${rep.signatures} · exports ${rep.exports} · feedback ${rep.feedback.total}`;
+    `signed ${rep.signatures} · exports ${rep.exports} · feedback ${rep.feedback.total} · ` +
+    `confirmations ${rep.confirmations ?? 0}`;
   const acts = $("pilot-actions");
   acts.replaceChildren();
   for (const a of rep.nextActions) {
@@ -547,6 +569,98 @@ $("btn-site-save").addEventListener("click", () => {
   renderSiteList(selectedId);
 });
 
+// GEO-013: destination confirmation — candidates near the selected pin come
+// from the synthetic fixture set plus any site descriptors carrying coords.
+function destinationCandidates(assertionId) {
+  const sitePoints = siteStore.list()
+    .filter((s) => s.record.assertionId === assertionId &&
+      Number.isFinite(s.record.fields?.latitude) && Number.isFinite(s.record.fields?.longitude))
+    .map((s) => ({ id: s.id, label: `${s.record.kind} descriptor`, kind: s.record.kind,
+      latitude: s.record.fields.latitude, longitude: s.record.fields.longitude,
+      source: s.record.source }));
+  return [...PROPERTY_FIXTURES.candidates, ...sitePoints];
+}
+
+function setDestination(point) {
+  destination = point;
+  if (!selectedId) return;
+  const entry = assertionStore.get(selectedId);
+  const a = entry?.record;
+  $("dest-point").textContent = `Destination ${fmt(point.latitude)}, ${fmt(point.longitude)}` +
+    (a ? ` (${Math.round(distanceMeters(a, point))}m from the saved pin)` : "");
+  const amb = assessAmbiguity({
+    point, candidates: destinationCandidates(selectedId),
+    accuracyMeters: a?.accuracyMeters ?? null,
+  });
+  $("dest-ambiguity").textContent = `Ambiguity: ${amb.verdict} — ${amb.summary}`;
+  $("dest-confidence").textContent = "Confirm to record this destination — confidence is computed at save and can never reach 'verified' from a pin or GPS alone.";
+  adapter.showDestination({
+    latitude: point.latitude, longitude: point.longitude,
+    draggable: true,
+    onDragEnd: ({ latitude, longitude }) => setDestination({ latitude, longitude }),
+  });
+}
+
+function renderDestList(assertionId) {
+  const list = $("dest-list");
+  list.replaceChildren();
+  for (const e of confirmStore.list().filter((c) => c.record.assertionId === assertionId)) {
+    const r = e.record;
+    const li = document.createElement("li");
+    const p = document.createElement("p");
+    p.className = "hint";
+    p.textContent = `${r.confirmedAt.slice(0, 19)}Z by ${r.confirmedBy} — ` +
+      `${r.confirmedPoint.latitude.toFixed(6)}, ${r.confirmedPoint.longitude.toFixed(6)} · ` +
+      `${r.ambiguity.verdict} · confidence ${r.confidence.level}` +
+      (r.correctionApplied.moved ? ` · moved ${r.correctionApplied.movedMeters}m from the original fix (kept)` : "");
+    li.appendChild(p);
+    list.appendChild(li);
+  }
+}
+
+$("btn-dest-device").addEventListener("click", () => {
+  const a = selectedId ? assertionStore.get(selectedId)?.record : null;
+  if (!a || a.source !== "device_position") {
+    notice("No device estimate on this pin — nothing to set the destination to.", "warn");
+    return;
+  }
+  setDestination({ latitude: a.latitude, longitude: a.longitude });
+});
+
+$("btn-dest-reset").addEventListener("click", () => {
+  const a = selectedId ? assertionStore.get(selectedId)?.record : null;
+  if (!a) return;
+  setDestination({ latitude: a.latitude, longitude: a.longitude });
+});
+
+$("btn-dest-save").addEventListener("click", () => {
+  if (!selectedId || !destination) { notice("Select a saved pin first.", "warn"); return; }
+  const a = assertionStore.get(selectedId)?.record;
+  if (!a) return;
+  const confirmedBy = $("dest-by").value.trim();
+  if (!confirmedBy) { notice("Name who is confirming this destination.", "warn"); return; }
+  const rec = createDestinationConfirmation({
+    assertionId: selectedId,
+    deviceEstimate: a.source === "device_position"
+      ? { latitude: a.latitude, longitude: a.longitude,
+          accuracyMeters: a.accuracyMeters, capturedAt: a.capturedAt, source: a.source }
+      : null,
+    confirmedPoint: destination,
+    candidates: destinationCandidates(selectedId),
+    accuracyMeters: a.accuracyMeters,
+    confirmedBy,
+    source: a.source === "device_position" ? "device_corrected" : "manual_adjustment",
+  });
+  const result = confirmStore.save(rec);
+  if (!result.ok) {
+    notice(`Not saved: ${result.errors.map((e) => `${e.field} ${e.message}`).join("; ")}`, "error");
+    return;
+  }
+  notice(`Destination confirmed (${rec.ambiguity.verdict}, confidence ${rec.confidence.level}). ` +
+    "This is stated intent — not parcel, address, or ownership.");
+  renderDestList(selectedId);
+});
+
 $("fb-target").addEventListener("change", renderPilot);
 $("btn-feedback").addEventListener("click", () => {
   const tt = $("fb-target").value;
@@ -575,6 +689,8 @@ function renderDetail(id) {
   clearCandidateForm();
   const entry = assertionStore.get(id);
   if (!entry) {
+    adapter.clearDestination();
+    destination = null;
     notice("Saved pin could not be loaded (missing or quarantined).", "error");
     return;
   }
@@ -596,6 +712,15 @@ function renderDetail(id) {
     : `Territory unresolved — no dataset polygon contains this point (ocean, gap, or data limit). ${terr.ok ? "" : "Dataset error."}`;
   $("geo-explain").textContent = "";
   renderSiteList(id);
+
+  // GEO-013: destination confirmation — device estimate stays as evidence;
+  // the (red) destination pin defaults to the last confirmation or the pin.
+  const last = destinationConfirmedFor(confirmStore, id);
+  setDestination(last ? last.record.confirmedPoint : { latitude: a.latitude, longitude: a.longitude });
+  $("dest-device").textContent = a.source === "device_position"
+    ? `Device estimate ${fmt(a.latitude)}, ${fmt(a.longitude)} ±${a.accuracyMeters ?? "?"}m — positioning evidence, kept even if the destination moves.`
+    : `Pin ${fmt(a.latitude)}, ${fmt(a.longitude)} (source: ${a.source}) — no device fix on this record.`;
+  renderDestList(id);
 
   adapter.panTo(a.latitude, a.longitude);
   adapter.showSaved({
@@ -943,6 +1068,9 @@ const BACKUP_SPECS = () => [
         draft: ["candidates"], package: ["packages"] }[rec.targetType] || []) }] },
   { name: "sites", store: siteStore, validate: validateSiteDescriptor,
     save: (r, id) => siteStore.save(r, { id }),
+    refs: [{ field: "assertionId", into: ["assertions"] }] },
+  { name: "confirmations", store: confirmStore, validate: validateDestinationConfirmation,
+    save: (r, id) => confirmStore.save(r, { id }),
     refs: [{ field: "assertionId", into: ["assertions"] }] },
 ];
 

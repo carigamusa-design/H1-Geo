@@ -111,6 +111,7 @@ export function pilotReport(stores, { now = new Date().toISOString() } = {}) {
   const {
     assertionStore, observationStore, evidenceStore, candidateStore,
     handoffStore, packageStore, signatureStore, exportStore, feedbackStore,
+    confirmStore,
   } = stores;
   const assertions = assertionStore.list();
   const syntheticAssertions = new Set(
@@ -148,6 +149,7 @@ export function pilotReport(stores, { now = new Date().toISOString() } = {}) {
     signatures: signatureStore ? signatureStore.list().length : 0,
     exports: exportStore ? exportStore.list().length : 0,
     feedback: { total: fb.length, byKind: feedbackByKind },
+    confirmations: confirmStore ? confirmStore.list().length : 0,
     nextActions: rows.map((r) => ({ draftId: r.id, title: r.candidate.title || r.candidate.summary, action: nextAction(r) })),
   };
 }

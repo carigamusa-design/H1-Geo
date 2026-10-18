@@ -11,6 +11,7 @@ const SOURCE_STYLES = {
   refined_manual: { color: "#b06000" },
   sensor_observation: { color: "#6b4fc4" },
   external_reference: { color: "#555" },
+  confirmed_destination: { color: "#c4333a" },
 };
 
 export function createLeafletAdapter({ L, elementId, center, zoom, tileUrl, attribution, onTileError }) {
@@ -27,6 +28,7 @@ export function createLeafletAdapter({ L, elementId, center, zoom, tileUrl, attr
 
   let draftMarker = null;
   let editMarker = null;
+  let destinationMarker = null;
 
   function pinIcon(source) {
     const { color } = SOURCE_STYLES[source] ?? SOURCE_STYLES.manual_target_pin;
@@ -72,6 +74,29 @@ export function createLeafletAdapter({ L, elementId, center, zoom, tileUrl, attr
       if (editMarker) {
         map.removeLayer(editMarker);
         editMarker = null;
+      }
+    },
+
+    // The user-confirmed destination — visually distinct (red) from the
+    // saved assertion pin (blue/green), independently draggable.
+    showDestination({ latitude, longitude, draggable, onDragEnd }) {
+      this.clearDestination();
+      destinationMarker = L.marker([latitude, longitude], {
+        icon: pinIcon("confirmed_destination"), draggable: Boolean(draggable),
+      }).addTo(map);
+      if (draggable && onDragEnd) {
+        destinationMarker.on("dragend", () => {
+          const p = destinationMarker.getLatLng();
+          onDragEnd({ latitude: p.lat, longitude: p.lng });
+        });
+      }
+      return destinationMarker;
+    },
+
+    clearDestination() {
+      if (destinationMarker) {
+        map.removeLayer(destinationMarker);
+        destinationMarker = null;
       }
     },
 
