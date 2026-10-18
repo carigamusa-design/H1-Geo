@@ -116,12 +116,32 @@
         </fieldset>
 
         <fieldset>
-          <legend>6. Opportunity candidate</legend>
+          <legend>6. Opportunity draft</legend>
+          <p class="hint">A draft is not a VNN mission. Fill what's known — the handoff preview lists what's still missing.</p>
           <label for="c-summary">Summary (defaults to latest observation)</label>
           <textarea id="c-summary" rows="2"></textarea>
-          <button id="btn-candidate" type="button">Create candidate (unverified)</button>
+          <label for="c-title">Title</label>
+          <input id="c-title" />
+          <label for="c-condition">Condition observed</label>
+          <textarea id="c-condition" rows="2"></textarea>
+          <label for="c-proposed">Proposed work</label>
+          <textarea id="c-proposed" rows="2"></textarea>
+          <div class="row">
+            <div><label for="c-timing">Requested timing</label><input id="c-timing" placeholder="e.g. next week" /></div>
+            <div><label for="c-caps">Capabilities (comma-sep)</label><input id="c-caps" placeholder="fence repair" /></div>
+          </div>
+          <label for="c-evreq">Evidence requirements</label>
+          <input id="c-evreq" />
+          <div class="row">
+            <div><label for="c-amount">Offered amount</label><input id="c-amount" inputmode="decimal" /></div>
+            <div><label for="c-currency">Currency</label><input id="c-currency" maxlength="3" placeholder="USD" /></div>
+            <div><label for="c-certainty">Certainty</label>
+              <select id="c-certainty"><option value="">—</option><option value="exact">exact</option><option value="approximate">approximate</option></select>
+            </div>
+          </div>
+          <button id="btn-candidate" type="button">Create draft (unverified)</button>
           <ul id="cand-list"></ul>
-          <p class="hint">Payloads below are dry-run previews only — nothing is sent to VNN.</p>
+          <p class="hint">Payload previews are dry-run only — nothing is sent to VNN.</p>
         </fieldset>
       </fieldset>
     </aside>

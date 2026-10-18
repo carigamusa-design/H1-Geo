@@ -20,6 +20,15 @@ const ALLOWED_TRANSITIONS = Object.freeze({
 });
 
 const SUMMARY_MAX_LENGTH = 500;
+// Mirrors H1-VNN intake_store _FIELD_MAX_LEN / EDITABLE_FIELDS vocabulary.
+const DRAFT_FIELD_MAX_LEN = Object.freeze({
+  title: 300,
+  condition: 5000,
+  proposedWork: 5000,
+  requestedTiming: 300,
+  evidenceRequirements: 2000,
+});
+const AMOUNT_CERTAINTIES = Object.freeze(["exact", "approximate"]);
 
 function fail(errors, field, message) {
   errors.push({ field, message });
@@ -33,6 +42,17 @@ export function createCandidate({ assertionId, observationId = null, summary, ca
     summary,
     status: "unverified",
     capturedAt,
+    // GEO-006 editable draft fields — null/absent means "not yet provided",
+    // reported honestly as missing rather than fabricated.
+    title: null,
+    condition: null,
+    proposedWork: null,
+    requestedTiming: null,
+    requiredCapabilities: [],
+    evidenceRequirements: null,
+    offeredAmount: null,
+    currency: null,
+    amountCertainty: null,
   };
 }
 
@@ -61,6 +81,33 @@ export function validateCandidate(value) {
   }
   if (typeof value.capturedAt !== "string" || Number.isNaN(Date.parse(value.capturedAt))) {
     fail(errors, "capturedAt", "must be a date-time string");
+  }
+  for (const [field, max] of Object.entries(DRAFT_FIELD_MAX_LEN)) {
+    const v = value[field];
+    if (v !== null && v !== undefined) {
+      if (typeof v !== "string") fail(errors, field, "must be a string or null");
+      else if ([...v].length > max) fail(errors, field, `must be at most ${max} characters`);
+    }
+  }
+  if (value.requiredCapabilities !== undefined && value.requiredCapabilities !== null) {
+    if (!Array.isArray(value.requiredCapabilities) || value.requiredCapabilities.some((c) => typeof c !== "string" || c.length < 1)) {
+      fail(errors, "requiredCapabilities", "must be an array of non-empty strings");
+    }
+  }
+  if (value.offeredAmount !== null && value.offeredAmount !== undefined) {
+    if (typeof value.offeredAmount !== "number" || !Number.isFinite(value.offeredAmount) || value.offeredAmount < 0) {
+      fail(errors, "offeredAmount", "must be a finite number >= 0 or null");
+    }
+  }
+  if (value.currency !== null && value.currency !== undefined) {
+    if (typeof value.currency !== "string" || !/^[A-Za-z]{3}$/.test(value.currency)) {
+      fail(errors, "currency", "must be a 3-letter currency code or null");
+    }
+  }
+  if (value.amountCertainty !== null && value.amountCertainty !== undefined) {
+    if (!AMOUNT_CERTAINTIES.includes(value.amountCertainty)) {
+      fail(errors, "amountCertainty", `must be one of: ${AMOUNT_CERTAINTIES.join(", ")} or null`);
+    }
   }
   return { valid: errors.length === 0, errors };
 }

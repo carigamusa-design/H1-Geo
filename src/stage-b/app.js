@@ -9,12 +9,8 @@ import { createRecordStore } from "./record-store.js";
 import { createObservation, validateObservation, OBSERVATION_STORE_KEY } from "./observation.js";
 import { createEvidenceLink } from "./evidence.js";
 import { createEvidenceStore } from "./evidence-store.js";
-import {
-  createCandidate,
-  transitionCandidateStatus,
-  validateCandidate,
-  CANDIDATE_STORE_KEY,
-} from "./candidate.js";
+import { createCandidate, transitionCandidateStatus } from "./candidate.js";
+import { createCandidateStore } from "./candidate-store.js";
 import { buildVnnDryRunPayload, validateVnnDryRunPayload } from "./vnn-dryrun.js";
 import { describeGeolocationError, TILE_FAILURE_MESSAGE, QUARANTINE_MESSAGE } from "./geo-errors.js";
 import { createLeafletAdapter } from "./map-adapter.js";
@@ -28,12 +24,7 @@ const observationStore = createRecordStore({
   validate: validateObservation,
   idPrefix: "obs",
 });
-const candidateStore = createRecordStore({
-  storage: window.localStorage,
-  key: CANDIDATE_STORE_KEY,
-  validate: validateCandidate,
-  idPrefix: "cand",
-});
+const candidateStore = createCandidateStore(window.localStorage);
 const evidenceStore = createEvidenceStore(window.localStorage, { assertionStore, observationStore });
 
 let draft = null; // { latitude, longitude, source, accuracyMeters }
@@ -180,21 +171,73 @@ $("btn-obs-save").addEventListener("click", () => {
   renderDetail(selectedId);
 });
 
+let editingCandidateId = null;
+
+function readCandidateForm(existing) {
+  const num = $("c-amount").value.trim();
+  return {
+    ...(existing ?? {}),
+    summary: $("c-summary").value.trim(),
+    title: $("c-title").value.trim() || null,
+    condition: $("c-condition").value.trim() || null,
+    proposedWork: $("c-proposed").value.trim() || null,
+    requestedTiming: $("c-timing").value.trim() || null,
+    requiredCapabilities: $("c-caps").value.split(",").map((s) => s.trim()).filter(Boolean),
+    evidenceRequirements: $("c-evreq").value.trim() || null,
+    offeredAmount: num === "" ? null : Number(num),
+    currency: $("c-currency").value.trim().toUpperCase() || null,
+    amountCertainty: $("c-certainty").value || null,
+  };
+}
+
+function fillCandidateForm(c) {
+  $("c-summary").value = c.summary ?? "";
+  $("c-title").value = c.title ?? "";
+  $("c-condition").value = c.condition ?? "";
+  $("c-proposed").value = c.proposedWork ?? "";
+  $("c-timing").value = c.requestedTiming ?? "";
+  $("c-caps").value = (c.requiredCapabilities ?? []).join(", ");
+  $("c-evreq").value = c.evidenceRequirements ?? "";
+  $("c-amount").value = c.offeredAmount ?? "";
+  $("c-currency").value = c.currency ?? "";
+  $("c-certainty").value = c.amountCertainty ?? "";
+}
+
+function clearCandidateForm() {
+  editingCandidateId = null;
+  fillCandidateForm({});
+  $("btn-candidate").textContent = "Create draft (unverified)";
+}
+
 $("btn-candidate").addEventListener("click", () => {
   if (!selectedId) return;
   const observations = observationStore.list().filter((o) => o.record.assertionId === selectedId);
   const latest = observations.at(-1);
-  const candidate = createCandidate({
-    assertionId: selectedId,
-    observationId: latest ? latest.id : null,
-    summary: $("c-summary").value.trim() || (latest ? latest.record.summary : ""),
-  });
-  const result = candidateStore.save(candidate);
-  if (!result.ok) {
-    notice(`Candidate not created: ${result.errors.map((e) => `${e.field} ${e.message}`).join("; ")}`, "error");
-    return;
+  if (editingCandidateId) {
+    const existing = candidateStore.get(editingCandidateId)?.record;
+    if (!existing) { editingCandidateId = null; return; }
+    const draft = readCandidateForm(existing);
+    const result = candidateStore.update(editingCandidateId, draft);
+    if (!result.ok) {
+      notice(`Draft not saved: ${result.errors.map((e) => `${e.field} ${e.message}`).join("; ")}`, "error");
+      return;
+    }
+    notice(`Draft ${editingCandidateId} updated.`);
+  } else {
+    const base = createCandidate({
+      assertionId: selectedId,
+      observationId: latest ? latest.id : null,
+      summary: $("c-summary").value.trim() || (latest ? latest.record.summary : ""),
+    });
+    const candidate = { ...base, ...readCandidateForm(), summary: base.summary };
+    const result = candidateStore.save(candidate);
+    if (!result.ok) {
+      notice(`Candidate not created: ${result.errors.map((e) => `${e.field} ${e.message}`).join("; ")}`, "error");
+      return;
+    }
+    notice(`Opportunity draft ${result.id} created (unverified — not a VNN mission).`);
   }
-  notice(`Opportunity candidate ${result.id} created (unverified).`);
+  clearCandidateForm();
   renderDetail(selectedId);
 });
 
@@ -225,6 +268,7 @@ function renderDetail(id) {
   const panel = $("detail");
   panel.hidden = !id;
   if (!id) return;
+  clearCandidateForm();
   const entry = assertionStore.get(id);
   if (!entry) {
     notice("Saved pin could not be loaded (missing or quarantined).", "error");
@@ -325,12 +369,24 @@ function renderCandidates(id) {
   const wrap = $("cand-list");
   wrap.replaceChildren();
   const assertion = assertionStore.get(id)?.record;
+  const links = evidenceStore.linksForAssertionTree(id).map((e) => e.record);
   for (const c of candidateStore.list().filter((c) => c.record.assertionId === id)) {
     const li = document.createElement("li");
     const status = document.createElement("strong");
     status.textContent = `[${c.record.status}] `;
     li.appendChild(status);
-    li.appendChild(document.createTextNode(`${c.record.summary} `));
+    li.appendChild(document.createTextNode(`${c.record.title ?? c.record.summary} `));
+
+    const editBtn = document.createElement("button");
+    editBtn.type = "button";
+    editBtn.textContent = "edit draft";
+    editBtn.addEventListener("click", () => {
+      editingCandidateId = c.id;
+      fillCandidateForm(c.record);
+      $("btn-candidate").textContent = "Save draft";
+    });
+    li.appendChild(editBtn);
+
     if (c.record.status === "unverified") {
       const btn = document.createElement("button");
       btn.type = "button";
@@ -344,12 +400,15 @@ function renderCandidates(id) {
       });
       li.appendChild(btn);
     }
-    const payload = buildVnnDryRunPayload({
-      candidate: c.record,
-      assertion,
-      evidenceLinks: evidenceStore.linksForAssertionTree(id).map((e) => e.record),
-    });
+
+    const payload = buildVnnDryRunPayload({ candidate: c.record, assertion, evidenceLinks: links });
     const check = validateVnnDryRunPayload(payload);
+    if (payload.missing.length) {
+      const warn = document.createElement("p");
+      warn.className = "hint";
+      warn.textContent = `Missing before handoff: ${payload.missing.join(", ")}`;
+      li.appendChild(warn);
+    }
     const pre = document.createElement("pre");
     pre.className = "payload";
     pre.textContent = JSON.stringify(payload, null, 2) + (check.valid ? "" : `\nINVALID: ${JSON.stringify(check.errors)}`);
