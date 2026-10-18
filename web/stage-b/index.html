@@ -156,6 +156,17 @@
           <textarea id="pkg-import" rows="4" placeholder='{"schemaVersion":"h1-geo/vnn-handoff-package-v0",...}'></textarea>
           <button id="btn-pkg-import" type="button">Verify package</button>
         </fieldset>
+
+        <fieldset>
+          <legend>8. Trusted handoff</legend>
+          <button id="btn-keygen" type="button">Generate signer key</button>
+          <span id="key-state" class="hint">no key</span>
+          <label for="t-signer">Signer name (defaults to reviewer)</label>
+          <input id="t-signer" placeholder="who signs" />
+          <label for="t-requester">VNN requester_ref (for export)</label>
+          <input id="t-requester" placeholder="e.g. h1geo://reviewer/self" />
+          <p class="hint">Integrity, signature validity, signer authorization, and evidence authenticity are reported separately — a valid signature alone does not establish the rest. Export records stay local; nothing is submitted to VNN.</p>
+        </fieldset>
   </main>
   <script src="../../vendor/leaflet/leaflet.js"></script>
   <script type="module" src="../../src/stage-b/app.js"></script>

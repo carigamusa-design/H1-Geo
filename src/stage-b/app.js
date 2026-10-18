@@ -19,6 +19,21 @@ import {
   validatePackageStructure,
   PACKAGE_STORE_KEY,
 } from "./handoff-package.js";
+import { verifyPackage } from "./handoff-package.js";
+import {
+  ed25519Available,
+  generateSignerKey,
+  createSignatureRecord,
+  verifySignatureRecord,
+  assessTrust,
+  validateSignatureRecord,
+  SIGNATURE_STORE_KEY,
+} from "./signature.js";
+import {
+  buildVnnIntakeExport,
+  validateVnnIntakeExport,
+  VNN_EXPORT_STORE_KEY,
+} from "./vnn-export.js";
 import { createCandidate, transitionCandidateStatus } from "./candidate.js";
 import { createCandidateStore } from "./candidate-store.js";
 import { buildVnnDryRunPayload, validateVnnDryRunPayload } from "./vnn-dryrun.js";
@@ -43,6 +58,19 @@ const packageStore = createRecordStore({
   validate: validatePackageStructure,
   idPrefix: "pkg",
 });
+const signatureStore = createRecordStore({
+  storage: window.localStorage,
+  key: SIGNATURE_STORE_KEY,
+  validate: validateSignatureRecord,
+  idPrefix: "sig",
+});
+const exportStore = createRecordStore({
+  storage: window.localStorage,
+  key: VNN_EXPORT_STORE_KEY,
+  validate: validateVnnIntakeExport,
+  idPrefix: "vex",
+});
+let signerKey = null;
 
 let draft = null; // { latitude, longitude, source, accuracyMeters }
 let selectedId = null;
@@ -520,6 +548,86 @@ function renderCandidates(id) {
         URL.revokeObjectURL(a.href);
       });
       pp.appendChild(dl);
+
+      // GEO-009: sign / verify-trust / preview+confirm VNN export.
+      const signBtn = document.createElement("button");
+      signBtn.type = "button";
+      signBtn.textContent = "Sign package";
+      signBtn.addEventListener("click", async () => {
+        if (!signerKey) { notice("Generate a signer key first (section 8).", "error"); return; }
+        const result = await createSignatureRecord({
+          pkg: p.record, privateKey: signerKey.privateKey,
+          publicKeyHex: signerKey.publicKeyHex, signerId: $("t-signer").value,
+        });
+        if (!result.ok) {
+          notice(`Not signed: ${result.errors.map((e) => `${e.field} ${e.message}`).join("; ")}`, "error");
+          return;
+        }
+        signatureStore.save(result.signature);
+        notice(`Package signed by "${result.signature.signerId}" (Ed25519 over digest ${result.signature.signedHash.slice(0, 12)}…).`);
+        renderCandidates(id);
+      });
+      pp.appendChild(signBtn);
+      const trustBtn = document.createElement("button");
+      trustBtn.type = "button";
+      trustBtn.textContent = "Verify trust";
+      trustBtn.addEventListener("click", async () => {
+        const rec = signatureStore.list().map((s) => s.record)
+          .filter((s) => s.signedHash === p.record.sha256).pop() || null;
+        const verdict = await assessTrust(p.record, rec, {
+          verifyPackage, stores: { assertionStore, candidateStore },
+        });
+        const pre2 = document.createElement("pre");
+        pre2.className = "payload";
+        pre2.textContent =
+          `contentIntact:        ${verdict.contentIntact}\n` +
+          `signatureValid:       ${verdict.signatureValid === null ? "unsigned" : verdict.signatureValid}\n` +
+          `signerAuthorized:     ${verdict.signerAuthorized === null ? "unsigned" : verdict.signerAuthorized}\n` +
+          `evidenceAuthenticity: ${verdict.evidenceAuthenticity}` +
+          (verdict.errors.length ? `\nflags: ${verdict.errors.map((e) => `${e.field} ${e.message}`).join("; ")}` : "");
+        pp.appendChild(pre2);
+      });
+      pp.appendChild(trustBtn);
+      const vexBtn = document.createElement("button");
+      vexBtn.type = "button";
+      vexBtn.textContent = "Preview VNN export";
+      vexBtn.addEventListener("click", () => {
+        const rec = signatureStore.list().map((s) => s.record)
+          .filter((s) => s.signedHash === p.record.sha256).pop() || null;
+        const result = buildVnnIntakeExport({
+          pkg: p.record, requesterRef: $("t-requester").value, signatureRec: rec,
+        });
+        const pre3 = document.createElement("pre");
+        pre3.className = "payload";
+        if (!result.ok) {
+          pre3.textContent = `export rejected: ${result.errors.map((e) => `${e.field} ${e.message}`).join("; ")}`;
+        } else {
+          pre3.textContent = JSON.stringify(result.record, null, 2);
+          const cf = document.createElement("button");
+          cf.type = "button";
+          cf.textContent = "Confirm export record";
+          cf.addEventListener("click", () => {
+            exportStore.save(result.record);
+            notice(`Export record ${result.record.exportId} stored — a prepared draft, not a VNN submission.`);
+            renderCandidates(id);
+          });
+          pre3.appendChild(cf);
+        }
+        pp.appendChild(pre3);
+      });
+      pp.appendChild(vexBtn);
+      for (const s of signatureStore.list().filter((s) => s.record.signedHash === p.record.sha256)) {
+        const st = document.createElement("p");
+        st.className = "hint";
+        st.textContent = `signature ${s.id} — ${s.record.signerId} · ${s.record.signature.slice(0, 16)}…`;
+        pp.appendChild(st);
+      }
+      for (const e of exportStore.list().filter((e) => e.record.packageRef?.sha256 === p.record.sha256)) {
+        const et = document.createElement("p");
+        et.className = "hint";
+        et.textContent = `export ${e.record.exportId} — ready=${e.record.readyForIntake} · dryRun (not submitted)`;
+        pp.appendChild(et);
+      }
       const pre = document.createElement("pre");
       pre.className = "payload";
       pre.textContent = JSON.stringify(p.record.content, null, 2);
@@ -529,6 +637,15 @@ function renderCandidates(id) {
     wrap.appendChild(li);
   }
 }
+
+$("btn-keygen").addEventListener("click", async () => {
+  if (!(await ed25519Available())) {
+    $("key-state").textContent = "Ed25519 unavailable in this WebCrypto — signing disabled";
+    return;
+  }
+  signerKey = await generateSignerKey();
+  $("key-state").textContent = `Ed25519 key ready — pub ${signerKey.publicKeyHex.slice(0, 16)}…`;
+});
 
 $("btn-pkg-import").addEventListener("click", async () => {
   const text = $("pkg-import").value;
