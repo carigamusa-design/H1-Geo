@@ -10,6 +10,11 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const PORT = Number(process.env.PORT || 8734);
+// Loopback by default. HOST=0.0.0.0 exposes the demo on the LAN so a phone
+// on the same network can reach it — note geolocation still needs a secure
+// context, so device GPS is unavailable over plain http://LAN-IP (see
+// docs/OPERATOR_GUIDE.md and GEO-018 launch notes).
+const HOST = process.env.HOST || "127.0.0.1";
 
 const TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -38,6 +43,6 @@ http
       res.writeHead(404).end("not found");
     }
   })
-  .listen(PORT, "127.0.0.1", () => {
-    console.log(`Stage B demo: http://127.0.0.1:${PORT}/stage-b`);
+  .listen(PORT, HOST, () => {
+    console.log(`Stage B demo: http://${HOST === "0.0.0.0" ? "<lan-ip>" : HOST}:${PORT}/stage-b`);
   });

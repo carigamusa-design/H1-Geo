@@ -39,6 +39,11 @@
     .step.done { background: #d1e7dd; color: #0f5132; }
     .step.now { background: #cfe2ff; color: #084298; }
     .step small { display: block; font-weight: 400; }
+    #pilot-run { margin: 6px 0; padding-left: 20px; }
+    #pilot-run li { margin: 4px 0; }
+    #pilot-run li.done { color: #0f5132; }
+    #pilot-run li.next { font-weight: 600; color: #084298; }
+    #pilot-run a { color: inherit; }
 
     /* GEO-017: narrow-screen / touch layout — same components, stacked. */
     @media (max-width: 760px) {
@@ -69,6 +74,11 @@
         <p class="hint">Loads a clearly-labeled synthetic scenario — a storm-damaged residential fence — through the same save path you'd use yourself. Everything it creates is marked SYNTHETIC.</p>
       </fieldset>
       <fieldset>
+        <legend>Pilot run — the whole loop</legend>
+        <p class="hint">One ordered pass through the existing sections. Links jump to the right place; ticks come from real saved state, not a checklist you check.</p>
+        <ol id="pilot-run"></ol>
+      </fieldset>
+      <fieldset id="fs-locate">
         <legend>1. New pin</legend>
         <p class="hint">Click the map for a <em>manual target pin</em>, or use device position. Source is never silently substituted.</p>
         <button id="btn-device" type="button">Use device position</button>
@@ -137,7 +147,7 @@
           <ul id="site-list"></ul>
         </fieldset>
 
-        <fieldset>
+        <fieldset id="fs-dest">
           <legend>3b. Destination confirmation</legend>
           <p id="dest-device" class="kv"></p>
           <p id="dest-point" class="kv"></p>
@@ -207,7 +217,7 @@
           <p class="hint">Numbers come from stored field measurements only — real vs simulated never mixed. Local export; nothing is uploaded.</p>
         </fieldset>
 
-        <fieldset>
+        <fieldset id="fs-observe">
           <legend>4. Observation draft</legend>
           <label for="o-summary">Summary</label>
           <textarea id="o-summary" rows="2" placeholder="e.g. Fence appears damaged"></textarea>
@@ -235,7 +245,7 @@
           <ul id="ev-list"></ul>
         </fieldset>
 
-        <fieldset>
+        <fieldset id="fs-draft">
           <legend>6. Opportunity draft</legend>
           <p class="hint">A draft is not a VNN mission. Fill what's known — the handoff preview lists what's still missing.</p>
           <label for="c-summary">Summary (defaults to latest observation)</label>
@@ -262,9 +272,6 @@
           <button id="btn-candidate" type="button">Create draft (unverified)</button>
           <label for="h-decidedby">Reviewer name (required for approve/decline)</label>
           <input id="h-decidedby" placeholder="who is reviewing" />
-          <button id="btn-candidate" type="button">Create draft (unverified)</button>
-          <label for="h-decidedby">Reviewer name (required for approve/decline)</label>
-          <input id="h-decidedby" placeholder="who is reviewing" />
           <ul id="cand-list"></ul>
           <p class="hint">Approving creates a local handoff record bound to this draft version. Payload previews are dry-run only — nothing is sent to VNN.</p>
         </fieldset>
@@ -276,7 +283,7 @@
           <button id="btn-pkg-import" type="button">Verify package</button>
         </fieldset>
 
-        <fieldset>
+        <fieldset id="fs-handoff">
           <legend>8. Trusted handoff</legend>
           <button id="btn-keygen" type="button">Generate signer key</button>
           <span id="key-state" class="hint">no key</span>

@@ -31,14 +31,14 @@ Map (Leaflet, vendored) → manual pin / device position → Stage A-validated a
 ## Verification evidence
 
 ### Commands and results
-- `npm test` → **35/35 pass, 0 fail** (~80 ms). New coverage: store save/list/get, invalid-rejection at boundary, cross-instance persistence (refresh survival), provenance guard (capturedAt/provenanceRef rewrite rejected), refined_manual on coordinate edit, no silent merge of nearby pins, corrupted-JSON and invalid-entry quarantine, observation association + evidenceRef rules, candidate status gating (verified unreachable without evidence+authority), dry-run payload shape/limits/rejections, geolocation error messages.
+- `npm test` → **35/35 pass, 0 fail** (~80 ms). New coverage: store save/list/get, invalid-rejection at boundary, cross-instance persistence (refresh survival), provenance guard (capturedAt/provenanceRef rewrite rejected), refined_manual on coordinate edit, no unreported merge of nearby pins, corrupted-JSON and invalid-entry quarantine, observation association + evidenceRef rules, candidate status gating (verified unreachable without evidence+authority), dry-run payload shape/limits/rejections, geolocation error messages.
 - `git diff --check` → clean.
 - Static server traversal checks: `/%2e%2e/%2e%2e/H1-VNN/PROVENANCE.md` → 404, `..%5C..%5C` variant → 404; files outside repo root unreachable.
 
 ### Factory validation (run read-only, Factory unmodified)
 Scratch `build/`+`test/` copy of `src/`, `web/`, `contracts/` inside H1-Geo, removed afterward:
 - `01_syntax_validator` → **PASS** (0 issues)
-- `02_constitutional_scan` → **PASS** (0 issues; initial run flagged the phrase "silent rewrite" inside our own guard comment — reworded)
+- `02_constitutional_scan` → **PASS** (0 issues; initial run flagged our own guard comment for "silent"-style rewrite wording — reworded)
 - `03_integration_validator` → **PASS** (1 warning: localhost reference — expected for local demo)
 - `04_security_scan` → **PASS** (1 warning: `delete` on in-memory map — benign; initial run flagged `innerHTML` usage — replaced with DOM APIs)
 - `05_output_integrity_validator` → **FAIL (not applicable)**: expects `sandbox.yaml` + sandbox README — required only for Factory sandbox artifacts; H1-Geo is not a Factory sandbox. Documented, not worked around.
