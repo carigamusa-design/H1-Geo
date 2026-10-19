@@ -50,6 +50,8 @@ import { OSM_PILOT_DATASET } from "./osm-pilot-data.js";
 import { assessDestination } from "../geo/assessment.js";
 import { createFieldMeasurement, validateFieldMeasurement,
   measurementSummary, FIELD_STORE_KEY } from "../geo/field.js";
+import { fieldDashboard, exportFieldMeasurements,
+  validateFieldExport } from "../geo/dashboard.js";
 import { createFeedbackStore, createFeedback, pilotReport,
   validateFeedback } from "./pilot.js";
 import { validateCoordinateAssertion } from "../coordinate-assertion.js";
@@ -122,6 +124,7 @@ let destination = null; // user-confirmed destination point for the selected pin
 let destInteractions = 0;   // nudges/drags/candidate picks since the pin opened
 let destOpenedAt = null;    // for durationMs on the confirmation record
 let chosenCandidate = null; // candidate the user snapped to via "Use", if any
+let liveDeviceFix = null;   // fresh geolocation reading for the next field measurement
 
 function notice(message, kind = "info") {
   const el = $("notice");
@@ -723,10 +726,21 @@ $("btn-dest-save").addEventListener("click", () => {
 // GEO-015: field validation — compare device/selection against an
 // independently established reference destination. Simulated by default;
 // a genuine observation requires the explicit checkbox.
+// Which pilot region (if any) contains a point — for by-region stats.
+function regionFor(point) {
+  for (const r of OSM_PILOT_DATASET.regions) {
+    const [w, s, e, n] = r.bbox;
+    if (point.latitude >= s && point.latitude <= n &&
+        point.longitude >= w && point.longitude <= e) return r.id;
+  }
+  return null;
+}
+
 function renderFieldList() {
   const list = $("fld-list");
   list.replaceChildren();
   const all = fieldStore.list();
+  renderDashboard(all);
   const sum = measurementSummary(all);
   $("fld-summary").textContent =
     `real ${sum.real.count} (mean error ${sum.real.meanErrorMeters ?? "—"}m, correct ${sum.real.correctBuildingRate ?? "—"}) · ` +
@@ -745,6 +759,65 @@ function renderFieldList() {
   }
 }
 
+function renderDashboard(entries) {
+  const d = fieldDashboard(entries);
+  const fmtStats = (s) =>
+    `n=${s.count}${s.count && !s.sufficient ? " (insufficient)" : ""} · ` +
+    `sel err median ${s.selectionError.median ?? "—"}m / p95 ${s.selectionError.p95 ?? "—"}m · ` +
+    `device err median ${s.deviceError.median ?? "—"}m · ` +
+    `correct bldg ${s.correctBuilding.correct}/${s.correctBuilding.independentlyVerified}` +
+    `${s.correctBuilding.rate != null ? ` (${s.correctBuilding.rate}%)` : ""} · ` +
+    `confusion ${s.neighborConfusion.rate ?? "—"}% · ` +
+    `corrections ${s.correctionRate.rate ?? "—"}% · ` +
+    `time ${s.medianDurationMs != null ? Math.round(s.medianDurationMs / 1000) + "s" : "—"} · ` +
+    `interactions ${s.medianInteractions ?? "—"} · ` +
+    `missing cov ${s.missingCoverage} · unresolved ${s.unresolved}`;
+  $("dash-real").textContent = `REAL: ${fmtStats(d.real)}`;
+  $("dash-sim").textContent = `simulated: ${fmtStats(d.simulated)}`;
+  $("dash-caveat").textContent = d.caveat ?? `${d.real.count} genuine measurements on record.`;
+  $("dash-regions").textContent =
+    `by region — real ${JSON.stringify(d.real.byRegion)} · simulated ${JSON.stringify(d.simulated.byRegion)}`;
+}
+
+$("btn-fld-device").addEventListener("click", () => {
+  if (!("geolocation" in navigator)) {
+    notice(describeGeolocationError(null), "warn");
+    return;
+  }
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      liveDeviceFix = {
+        latitude: pos.coords.latitude,
+        longitude: pos.coords.longitude,
+        accuracyMeters: typeof pos.coords.accuracy === "number" ? pos.coords.accuracy : null,
+        capturedAt: new Date().toISOString(),
+        source: "device_position",
+      };
+      $("fld-device").textContent =
+        `Device fix ${liveDeviceFix.latitude.toFixed(6)}, ${liveDeviceFix.longitude.toFixed(6)} ` +
+        `±${liveDeviceFix.accuracyMeters ?? "?"}m — will attach to the next measurement.`;
+      adapter.accuracyCircle(liveDeviceFix);
+    },
+    (err) => { liveDeviceFix = null;
+      $("fld-device").textContent = "No device fix — location permission denied or unavailable.";
+      notice(describeGeolocationError(err), "warn"); },
+    { enableHighAccuracy: true, timeout: 15000 },
+  );
+});
+
+$("btn-fld-export").addEventListener("click", () => {
+  const doc = exportFieldMeasurements(fieldStore.list());
+  const check = validateFieldExport(doc);
+  if (!check.valid) { notice("Export failed validation — nothing downloaded.", "error"); return; }
+  const blob = new Blob([JSON.stringify(doc, null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `h1geo-field-trial-${Date.now()}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  notice(`Exported ${doc.measurements.length} measurement(s) locally — nothing was uploaded.`);
+});
+
 $("btn-fld-save").addEventListener("click", () => {
   const measuredBy = $("fld-by").value.trim();
   if (!measuredBy) { notice("Name who measured.", "warn"); return; }
@@ -757,11 +830,14 @@ $("btn-fld-save").addEventListener("click", () => {
   }
   const a = selectedId ? assertionStore.get(selectedId)?.record : null;
   const last = selectedId ? destinationConfirmedFor(confirmStore, selectedId) : null;
+  const amb = last ? assessAmbiguity({ point: last.record.confirmedPoint,
+    candidates: destinationCandidates(selectedId, last.record.confirmedPoint),
+    accuracyMeters: a?.accuracyMeters ?? null }) : null;
   const rec = createFieldMeasurement({
-    devicePosition: a && a.source === "device_position"
+    devicePosition: liveDeviceFix ?? (a && a.source === "device_position"
       ? { latitude: a.latitude, longitude: a.longitude, accuracyMeters: a.accuracyMeters,
           capturedAt: a.capturedAt, source: a.source }
-      : null,
+      : null),
     referenceDestination: { latitude: refLat, longitude: refLng, source: refSource,
       description: $("fld-ref-desc").value.trim() || null },
     selected: last ? { point: last.record.confirmedPoint,
@@ -772,6 +848,10 @@ $("btn-fld-save").addEventListener("click", () => {
     confirmationId: last?.id ?? null,
     interactionCount: last?.record.interactionCount ?? null,
     durationMs: last?.record.durationMs ?? null,
+    regionId: last ? regionFor(last.record.confirmedPoint) : regionFor({ latitude: refLat, longitude: refLng }),
+    session: $("fld-session").value.trim() || null,
+    ambiguityVerdict: amb?.verdict ?? null,
+    candidateCount: amb?.within?.length ?? null,
     measuredBy,
     simulated: !$("fld-real").checked,
     notes: $("fld-notes").value.trim() || null,
@@ -781,6 +861,8 @@ $("btn-fld-save").addEventListener("click", () => {
     notice(`Measurement not saved: ${result.errors.map((e) => `${e.field} ${e.message}`).join("; ")}`, "error");
     return;
   }
+  liveDeviceFix = null;
+  $("fld-device").textContent = "No device fix captured for the next measurement.";
   notice(`Field measurement saved (${rec.simulated ? "simulated" : "REAL"} — ` +
     `selection error ${rec.selectionErrorMeters ?? "n/a"}m).`);
   renderFieldList();

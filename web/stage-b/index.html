@@ -150,7 +150,11 @@
 
         <fieldset>
           <legend>3c. Field validation</legend>
-          <p class="hint">Compare the device/selected destination against an independently established reference (e.g. you are standing at the known property). Simulated unless explicitly marked real.</p>
+          <p class="hint">Compare the device/selected destination against an <b>independently</b> established reference — your own pin or selection is not ground truth. Simulated unless explicitly marked real.</p>
+          <button id="btn-fld-device" type="button">Capture device position for this measurement</button>
+          <p id="fld-device" class="hint">No device fix captured for the next measurement.</p>
+          <label for="fld-session">Field session label (optional, e.g. "Trial A — Summerhill")</label>
+          <input id="fld-session" type="text">
           <label for="fld-ref-lat">Reference latitude</label>
           <input id="fld-ref-lat" type="number" step="any" placeholder="reference lat">
           <label for="fld-ref-lng">Reference longitude</label>
@@ -174,6 +178,16 @@
           <button id="btn-fld-save" type="button">Save field measurement</button>
           <p id="fld-summary" class="kv"></p>
           <ul id="fld-list"></ul>
+        </fieldset>
+
+        <fieldset>
+          <legend>3d. Field trial dashboard</legend>
+          <p id="dash-real" class="kv"></p>
+          <p id="dash-sim" class="kv"></p>
+          <p id="dash-regions" class="hint"></p>
+          <p id="dash-caveat" class="hint"></p>
+          <button id="btn-fld-export" type="button">Export trial results (local JSON)</button>
+          <p class="hint">Numbers come from stored field measurements only — real vs simulated never mixed. Local export; nothing is uploaded.</p>
         </fieldset>
 
         <fieldset>
