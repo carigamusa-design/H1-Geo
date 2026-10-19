@@ -45,6 +45,8 @@ import { createDestinationConfirmation, validateDestinationConfirmation,
   destinationConfirmedFor, assessAmbiguity, distanceMeters,
   CONFIRM_STORE_KEY } from "../geo/property.js";
 import { PROPERTY_FIXTURES } from "./property-fixtures.js";
+import { candidatesNear } from "../geo/sources.js";
+import { OSM_PILOT_DATASET } from "./osm-pilot-data.js";
 import { createFeedbackStore, createFeedback, pilotReport,
   validateFeedback } from "./pilot.js";
 import { validateCoordinateAssertion } from "../coordinate-assertion.js";
@@ -569,16 +571,22 @@ $("btn-site-save").addEventListener("click", () => {
   renderSiteList(selectedId);
 });
 
-// GEO-013: destination confirmation — candidates near the selected pin come
-// from the synthetic fixture set plus any site descriptors carrying coords.
-function destinationCandidates(assertionId) {
+// GEO-013/014: destination candidates = real OSM footprints near the point
+// + synthetic fixtures + operator-entered site descriptors. Each carries
+// its own provenance; absent coverage contributes nothing.
+function destinationCandidates(assertionId, point = null) {
   const sitePoints = siteStore.list()
     .filter((s) => s.record.assertionId === assertionId &&
       Number.isFinite(s.record.fields?.latitude) && Number.isFinite(s.record.fields?.longitude))
     .map((s) => ({ id: s.id, label: `${s.record.kind} descriptor`, kind: s.record.kind,
       latitude: s.record.fields.latitude, longitude: s.record.fields.longitude,
-      source: s.record.source }));
-  return [...PROPERTY_FIXTURES.candidates, ...sitePoints];
+      source: { provider: s.record.source ?? "operator" } }));
+  const ref = point ?? (selectedId ? assertionStore.get(selectedId)?.record : null);
+  const near = ref
+    ? candidatesNear({ point: ref, radiusMeters: 500, osmDataset: OSM_PILOT_DATASET,
+        fixtureCandidates: PROPERTY_FIXTURES.candidates })
+    : PROPERTY_FIXTURES.candidates;
+  return [...near, ...sitePoints];
 }
 
 function setDestination(point) {
@@ -589,11 +597,28 @@ function setDestination(point) {
   $("dest-point").textContent = `Destination ${fmt(point.latitude)}, ${fmt(point.longitude)}` +
     (a ? ` (${Math.round(distanceMeters(a, point))}m from the saved pin)` : "");
   const amb = assessAmbiguity({
-    point, candidates: destinationCandidates(selectedId),
+    point, candidates: destinationCandidates(selectedId, point),
     accuracyMeters: a?.accuracyMeters ?? null,
   });
   $("dest-ambiguity").textContent = `Ambiguity: ${amb.verdict} — ${amb.summary}`;
   $("dest-confidence").textContent = "Confirm to record this destination — confidence is computed at save and can never reach 'verified' from a pin or GPS alone.";
+  const candList = $("dest-cands");
+  candList.replaceChildren();
+  for (const c of amb.within.slice(0, 8)) {
+    const li = document.createElement("li");
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.textContent = "Use";
+    btn.addEventListener("click", () => setDestination({ latitude: c.latitude, longitude: c.longitude }));
+    const p = document.createElement("span");
+    p.className = "hint";
+    const src = c.fixture ? "synthetic fixture" : (c.source?.provider ?? "unknown source");
+    p.textContent = ` ${c.label ?? c.id ?? "candidate"} — ${Math.round(c.distanceMeters)}m` +
+      `${c.inside ? " (contains the point)" : ""} · ${src}`;
+    li.appendChild(btn);
+    li.appendChild(p);
+    candList.appendChild(li);
+  }
   adapter.showDestination({
     latitude: point.latitude, longitude: point.longitude,
     draggable: true,

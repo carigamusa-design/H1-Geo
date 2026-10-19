@@ -18,6 +18,7 @@ export const AMBIGUITY_VERDICTS = Object.freeze([
   "no_source_data",     // no candidate dataset supplied at all
   "none_in_range",      // data exists, nothing near the point
   "single_unverified",  // exactly one candidate — a lead, not a verification
+  "inside_footprint",   // point lies inside exactly one mapped building outline (footprint, not parcel)
   "ambiguous",          // several candidates — cannot be distinguished
 ]);
 
@@ -45,6 +46,20 @@ export function distanceMeters(a, b) {
   return 2 * EARTH_RADIUS_M * Math.asin(Math.sqrt(s));
 }
 
+/** Ray-cast point-in-ring test. ring: [[lat,lng],...] (closed or open). */
+export function pointInRing(lat, lng, ring) {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [yi, xi] = ring[i];
+    const [yj, xj] = ring[j];
+    if ((yi > lat) !== (yj > lat) &&
+        lng < ((xj - xi) * (lat - yi)) / (yj - yi) + xi) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
 /**
  * Candidates within radius of a point, sorted by distance.
  * Candidates: [{latitude, longitude, label?, kind?, source?, fixture?}].
@@ -69,13 +84,33 @@ export function assessAmbiguity({ point, candidates, accuracyMeters = null, radi
       summary: "No property-level source data available for this point — nothing to corroborate or distinguish." };
   }
   const within = nearbyCandidates({ point, candidates, radiusMeters: radius });
-  if (within.length > 1) {
-    return { verdict: "ambiguous", radiusMeters: radius, within,
-      summary: `${within.length} candidate properties sit within ${Math.round(radius)}m — the destination cannot be distinguished automatically. A user must pick, or record the intent as approximate.` };
+  // A point inside a footprint outline is "within" regardless of how far
+  // the building's centroid is (large buildings have far centroids).
+  const inside = candidates.filter((c) =>
+    Array.isArray(c.polygon) && c.polygon.length >= 3 &&
+    pointInRing(point.latitude, point.longitude, c.polygon));
+  const insideIds = new Set(inside.map((c) => c.id));
+  const merged = [
+    ...inside.map((c) => ({ ...c, distanceMeters: distanceMeters(point, c), inside: true })),
+    ...within.filter((c) => !insideIds.has(c.id)).map((c) => ({ ...c, inside: false })),
+  // containing footprints lead — the point being inside an outline is
+  // stronger evidence than a nearby centroid
+  ].sort((x, y) => (Number(y.inside) - Number(x.inside)) || (x.distanceMeters - y.distanceMeters));
+  if (inside.length === 1) {
+    const neighbors = merged.length - 1;
+    return { verdict: "inside_footprint", radiusMeters: radius, within: merged,
+      summary: `The point lies inside one mapped building outline (${inside[0].label ?? "unnamed"})` +
+        (neighbors ? ` — with ${neighbors} other candidate(s) nearby, so the outline itself is the only discriminator. ` : " — ") +
+        "A footprint is not a parcel boundary or a verified address; unverified lead." };
   }
-  if (within.length === 1) {
-    return { verdict: "single_unverified", radiusMeters: radius, within,
-      summary: `One candidate (${within[0].label ?? "unnamed"}) lies within ${Math.round(radius)}m — a lead only; the source data is not an authority.` };
+  if (merged.length > 1) {
+    const note = inside.length > 1 ? "overlapping mapped outlines" : "candidate properties";
+    return { verdict: "ambiguous", radiusMeters: radius, within: merged,
+      summary: `${merged.length} ${note} sit within ${Math.round(radius)}m — the destination cannot be distinguished automatically. A user must pick, or record the intent as approximate.` };
+  }
+  if (merged.length === 1) {
+    return { verdict: "single_unverified", radiusMeters: radius, within: merged,
+      summary: `One candidate (${merged[0].label ?? "unnamed"}) lies within ${Math.round(radius)}m — a lead only; the source data is not an authority.` };
   }
   return { verdict: "none_in_range", radiusMeters: radius, within,
     summary: `Source data exists but no candidate lies within ${Math.round(radius)}m — the nearest property data cannot identify this destination.` };
@@ -86,6 +121,10 @@ function confidenceFor({ ambiguity, deviceEstimate, source }) {
   if (ambiguity.verdict === "ambiguous") {
     basis.push("multiple candidate properties in range");
     return { level: "low", basis };
+  }
+  if (ambiguity.verdict === "inside_footprint") {
+    basis.push("point inside one mapped building outline — not a parcel or verified address");
+    return { level: "moderate", basis };
   }
   if (ambiguity.verdict === "single_unverified") {
     basis.push("one candidate property in range (unverified source)");
@@ -151,7 +190,9 @@ export function createDestinationConfirmation({
       candidates: ambiguity.within.map((c) => ({
         id: c.id ?? null, label: c.label ?? null, kind: c.kind ?? null,
         distanceMeters: Math.round(c.distanceMeters * 10) / 10,
+        inside: Boolean(c.inside),
         fixture: Boolean(c.fixture),
+        sourceProvider: c.source?.provider ?? (c.fixture ? "synthetic fixture" : null),
       })),
       summary: ambiguity.summary,
     },
