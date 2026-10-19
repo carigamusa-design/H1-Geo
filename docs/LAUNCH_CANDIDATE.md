@@ -1,14 +1,25 @@
-# H1-Geo Launch-Candidate Report (GEO-019 update)
+# H1-Geo Launch-Candidate Report (GEO-020 update)
 
-**Date:** GEO-019 · **Verdict:** LAUNCH CANDIDATE — ready for a *controlled,
-human-operated pilot*; not ready for public launch.
-Basis: 183/183 automated tests, 78/78 end-to-end regression checks
+**Date:** GEO-020 · **Verdict:** LAUNCH CANDIDATE — machine-side access
+verified and ready for a *controlled, human-operated pilot*; not ready
+for public launch.
+Basis: 188/188 automated tests, 78/78 end-to-end regression checks
 (`scripts/pilot-regression.mjs`) across all three OSM pilot regions,
 Factory validators clean. **`real n = 0` genuine field measurements —
 no field-accuracy claim exists.**
 Acceptance bars are now explicit in `docs/PILOT_ACCEPTANCE.md`: the
 controlled-pilot bar is **not yet met** (requires a human neighbor-trial
 with real measurements); the public-launch bar is listed separately.
+
+## GEO-020 update — phone access verified machine-side, trial BLOCKED
+
+`scripts/verify-mobile-access.mjs` now proves LAN reachability pre-session:
+this machine's Wi-Fi IPv4 `172.20.17.239`, dev cert SANs cover it,
+`HTTPS=1 HOST=0.0.0.0` serves `https://172.20.17.239:8734/stage-b`
+(HTTP 200 from this machine, secure origin). The first physical device
+trial is **BLOCKED** pending a human operator — verified state and exact
+steps are in `docs/FIELD_TRIAL_RECORD.md`. A localhost/LAN self-request
+does not prove a phone can connect; that step is expressly unverified.
 
 ## GEO-019 update — mobile access resolved
 
