@@ -131,7 +131,13 @@
           <p id="dest-point" class="kv"></p>
           <button id="btn-dest-device" type="button">Set destination to device estimate</button>
           <button id="btn-dest-reset" type="button">Reset destination to saved pin</button>
-          <p class="hint">Drag the <b>red</b> destination pin to the intended property. Moving it never rewrites the original pin or device evidence.</p>
+          <p class="hint">Drag the <b>red</b> destination pin to the intended property, or nudge it ~1.5m at a time (easier on mobile). Moving it never rewrites the original pin or device evidence.</p>
+          <div class="row">
+            <button id="dest-n" type="button" title="nudge north">&#8593;N</button>
+            <button id="dest-w" type="button" title="nudge west">&#8592;W</button>
+            <button id="dest-e" type="button" title="nudge east">E&#8594;</button>
+            <button id="dest-s" type="button" title="nudge south">&#8595;S</button>
+          </div>
           <p id="dest-ambiguity" class="kv"></p>
           <p id="dest-confidence" class="hint"></p>
           <ul id="dest-cands"></ul>
@@ -139,7 +145,35 @@
           <input id="dest-by" type="text" placeholder="operator name">
           <button id="btn-dest-save" type="button">Confirm destination</button>
           <ul id="dest-list"></ul>
-          <p class="hint">A confirmed destination is user-stated intent — never legal parcel, verified address, or ownership. Candidate data is synthetic fixture data unless a site descriptor says otherwise.</p>
+          <p class="hint">A confirmed destination is user-stated intent — never legal parcel, verified address, or ownership. Candidates marked "synthetic fixture" are test data; "OpenStreetMap contributors" entries are crowdsourced outlines (ODbL), not parcels.</p>
+        </fieldset>
+
+        <fieldset>
+          <legend>3c. Field validation</legend>
+          <p class="hint">Compare the device/selected destination against an independently established reference (e.g. you are standing at the known property). Simulated unless explicitly marked real.</p>
+          <label for="fld-ref-lat">Reference latitude</label>
+          <input id="fld-ref-lat" type="number" step="any" placeholder="reference lat">
+          <label for="fld-ref-lng">Reference longitude</label>
+          <input id="fld-ref-lng" type="number" step="any" placeholder="reference lng">
+          <label for="fld-ref-source">How was the reference established?</label>
+          <input id="fld-ref-source" type="text" placeholder="e.g. standing at known address; survey marker">
+          <label for="fld-ref-desc">Reference description (optional)</label>
+          <input id="fld-ref-desc" type="text" placeholder="e.g. front door of 742 Crew St">
+          <label for="fld-correct">Was the correct building identified?</label>
+          <select id="fld-correct">
+            <option value="unknown">unknown</option>
+            <option value="yes">yes</option>
+            <option value="no">no</option>
+          </select>
+          <label><input id="fld-correction" type="checkbox"> The selection needed correcting</label>
+          <label><input id="fld-real" type="checkbox"> This is a genuine, permissioned field observation (not simulated)</label>
+          <label for="fld-by">Measured by</label>
+          <input id="fld-by" type="text" placeholder="operator name">
+          <label for="fld-notes">Notes (optional)</label>
+          <input id="fld-notes" type="text">
+          <button id="btn-fld-save" type="button">Save field measurement</button>
+          <p id="fld-summary" class="kv"></p>
+          <ul id="fld-list"></ul>
         </fieldset>
 
         <fieldset>

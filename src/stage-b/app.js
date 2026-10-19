@@ -47,6 +47,9 @@ import { createDestinationConfirmation, validateDestinationConfirmation,
 import { PROPERTY_FIXTURES } from "./property-fixtures.js";
 import { candidatesNear } from "../geo/sources.js";
 import { OSM_PILOT_DATASET } from "./osm-pilot-data.js";
+import { assessDestination } from "../geo/assessment.js";
+import { createFieldMeasurement, validateFieldMeasurement,
+  measurementSummary, FIELD_STORE_KEY } from "../geo/field.js";
 import { createFeedbackStore, createFeedback, pilotReport,
   validateFeedback } from "./pilot.js";
 import { validateCoordinateAssertion } from "../coordinate-assertion.js";
@@ -105,11 +108,20 @@ const confirmStore = createRecordStore({
   validate: validateDestinationConfirmation,
   idPrefix: "conf",
 });
+const fieldStore = createRecordStore({
+  storage: window.localStorage,
+  key: FIELD_STORE_KEY,
+  validate: validateFieldMeasurement,
+  idPrefix: "fld",
+});
 
 let draft = null; // { latitude, longitude, source, accuracyMeters }
 let selectedId = null;
 let accuracyCircle = null;
 let destination = null; // user-confirmed destination point for the selected pin
+let destInteractions = 0;   // nudges/drags/candidate picks since the pin opened
+let destOpenedAt = null;    // for durationMs on the confirmation record
+let chosenCandidate = null; // candidate the user snapped to via "Use", if any
 
 function notice(message, kind = "info") {
   const el = $("notice");
@@ -589,27 +601,33 @@ function destinationCandidates(assertionId, point = null) {
   return [...near, ...sitePoints];
 }
 
-function setDestination(point) {
+function setDestination(point, { countInteraction = true, candidate = undefined } = {}) {
   destination = point;
+  if (countInteraction) destInteractions++;
+  if (candidate !== undefined) chosenCandidate = candidate;
   if (!selectedId) return;
   const entry = assertionStore.get(selectedId);
   const a = entry?.record;
   $("dest-point").textContent = `Destination ${fmt(point.latitude)}, ${fmt(point.longitude)}` +
     (a ? ` (${Math.round(distanceMeters(a, point))}m from the saved pin)` : "");
-  const amb = assessAmbiguity({
+  const last = destinationConfirmedFor(confirmStore, selectedId);
+  const assess = assessDestination({
     point, candidates: destinationCandidates(selectedId, point),
-    accuracyMeters: a?.accuracyMeters ?? null,
+    accuracyMeters: a?.accuracyMeters ?? null, deviceEstimate: a,
+    confirmedRecord: last,
   });
-  $("dest-ambiguity").textContent = `Ambiguity: ${amb.verdict} — ${amb.summary}`;
-  $("dest-confidence").textContent = "Confirm to record this destination — confidence is computed at save and can never reach 'verified' from a pin or GPS alone.";
+  $("dest-ambiguity").textContent = `${assess.headline} — ${assess.detail}`;
+  $("dest-confidence").textContent = chosenCandidate
+    ? `Candidate selected: ${chosenCandidate.label ?? chosenCandidate.id} (${chosenCandidate.source?.provider ?? "unknown source"}) — confirmation still required.`
+    : "Confirm to record this destination — confidence is computed at save and can never reach 'verified' from a pin or GPS alone.";
   const candList = $("dest-cands");
   candList.replaceChildren();
-  for (const c of amb.within.slice(0, 8)) {
+  for (const c of (assess.candidates ?? []).slice(0, 8)) {
     const li = document.createElement("li");
     const btn = document.createElement("button");
     btn.type = "button";
     btn.textContent = "Use";
-    btn.addEventListener("click", () => setDestination({ latitude: c.latitude, longitude: c.longitude }));
+    btn.addEventListener("click", () => setDestination({ latitude: c.latitude, longitude: c.longitude }, { candidate: c }));
     const p = document.createElement("span");
     p.className = "hint";
     const src = c.fixture ? "synthetic fixture" : (c.source?.provider ?? "unknown source");
@@ -622,9 +640,22 @@ function setDestination(point) {
   adapter.showDestination({
     latitude: point.latitude, longitude: point.longitude,
     draggable: true,
-    onDragEnd: ({ latitude, longitude }) => setDestination({ latitude, longitude }),
+    onDragEnd: ({ latitude, longitude }) => setDestination({ latitude, longitude }, { candidate: null }),
   });
 }
+
+// ~1.5m nudges — fine adjustment where dragging is imprecise (mobile).
+const NUDGE_M = 1.5;
+const nudge = (dLat, dLng) => () => {
+  if (!destination) return;
+  const lat = destination.latitude + (dLat * NUDGE_M) / 111_320;
+  const lng = destination.longitude + (dLng * NUDGE_M) / (111_320 * Math.cos(destination.latitude * Math.PI / 180));
+  setDestination({ latitude: lat, longitude: lng }, { candidate: null });
+};
+$("dest-n").addEventListener("click", nudge(1, 0));
+$("dest-s").addEventListener("click", nudge(-1, 0));
+$("dest-e").addEventListener("click", nudge(0, 1));
+$("dest-w").addEventListener("click", nudge(0, -1));
 
 function renderDestList(assertionId) {
   const list = $("dest-list");
@@ -675,6 +706,9 @@ $("btn-dest-save").addEventListener("click", () => {
     accuracyMeters: a.accuracyMeters,
     confirmedBy,
     source: a.source === "device_position" ? "device_corrected" : "manual_adjustment",
+    selectedCandidate: chosenCandidate,
+    interactionCount: destInteractions,
+    durationMs: destOpenedAt ? Date.now() - destOpenedAt : null,
   });
   const result = confirmStore.save(rec);
   if (!result.ok) {
@@ -684,6 +718,72 @@ $("btn-dest-save").addEventListener("click", () => {
   notice(`Destination confirmed (${rec.ambiguity.verdict}, confidence ${rec.confidence.level}). ` +
     "This is stated intent — not parcel, address, or ownership.");
   renderDestList(selectedId);
+});
+
+// GEO-015: field validation — compare device/selection against an
+// independently established reference destination. Simulated by default;
+// a genuine observation requires the explicit checkbox.
+function renderFieldList() {
+  const list = $("fld-list");
+  list.replaceChildren();
+  const all = fieldStore.list();
+  const sum = measurementSummary(all);
+  $("fld-summary").textContent =
+    `real ${sum.real.count} (mean error ${sum.real.meanErrorMeters ?? "—"}m, correct ${sum.real.correctBuildingRate ?? "—"}) · ` +
+    `simulated ${sum.simulated.count} (mean error ${sum.simulated.meanErrorMeters ?? "—"}m)`;
+  for (const e of all.slice(-8).reverse()) {
+    const r = e.record;
+    const li = document.createElement("li");
+    const p = document.createElement("p");
+    p.className = "hint";
+    p.textContent = `${r.measuredAt.slice(0, 19)}Z ${r.simulated ? "[simulated]" : "[REAL]"} by ${r.measuredBy}` +
+      ` — device error ${r.deviceErrorMeters ?? "—"}m, selection error ${r.selectionErrorMeters ?? "—"}m` +
+      `${r.correctBuildingIdentified === null ? "" : ` · correct building: ${r.correctBuildingIdentified}`}` +
+      `${r.correctionNeeded ? " · correction needed" : ""}`;
+    li.appendChild(p);
+    list.appendChild(li);
+  }
+}
+
+$("btn-fld-save").addEventListener("click", () => {
+  const measuredBy = $("fld-by").value.trim();
+  if (!measuredBy) { notice("Name who measured.", "warn"); return; }
+  const refLat = Number($("fld-ref-lat").value);
+  const refLng = Number($("fld-ref-lng").value);
+  const refSource = $("fld-ref-source").value.trim();
+  if (!Number.isFinite(refLat) || !Number.isFinite(refLng) || !refSource) {
+    notice("Reference destination needs coordinates and a source (how it was established).", "warn");
+    return;
+  }
+  const a = selectedId ? assertionStore.get(selectedId)?.record : null;
+  const last = selectedId ? destinationConfirmedFor(confirmStore, selectedId) : null;
+  const rec = createFieldMeasurement({
+    devicePosition: a && a.source === "device_position"
+      ? { latitude: a.latitude, longitude: a.longitude, accuracyMeters: a.accuracyMeters,
+          capturedAt: a.capturedAt, source: a.source }
+      : null,
+    referenceDestination: { latitude: refLat, longitude: refLng, source: refSource,
+      description: $("fld-ref-desc").value.trim() || null },
+    selected: last ? { point: last.record.confirmedPoint,
+      candidateId: last.record.selectedCandidate?.id ?? null, confirmationId: last.id } : null,
+    correctBuildingIdentified: $("fld-correct").value === "unknown" ? null
+      : $("fld-correct").value === "yes",
+    correctionNeeded: $("fld-correction").checked,
+    confirmationId: last?.id ?? null,
+    interactionCount: last?.record.interactionCount ?? null,
+    durationMs: last?.record.durationMs ?? null,
+    measuredBy,
+    simulated: !$("fld-real").checked,
+    notes: $("fld-notes").value.trim() || null,
+  });
+  const result = fieldStore.save(rec);
+  if (!result.ok) {
+    notice(`Measurement not saved: ${result.errors.map((e) => `${e.field} ${e.message}`).join("; ")}`, "error");
+    return;
+  }
+  notice(`Field measurement saved (${rec.simulated ? "simulated" : "REAL"} — ` +
+    `selection error ${rec.selectionErrorMeters ?? "n/a"}m).`);
+  renderFieldList();
 });
 
 $("fb-target").addEventListener("change", renderPilot);
@@ -738,10 +838,14 @@ function renderDetail(id) {
   $("geo-explain").textContent = "";
   renderSiteList(id);
 
-  // GEO-013: destination confirmation — device estimate stays as evidence;
-  // the (red) destination pin defaults to the last confirmation or the pin.
+  // GEO-013/015: destination confirmation — device estimate stays as
+  // evidence; the (red) destination pin defaults to the last confirmation
+  // or the pin. Interaction/time tracking starts fresh per pin.
   const last = destinationConfirmedFor(confirmStore, id);
-  setDestination(last ? last.record.confirmedPoint : { latitude: a.latitude, longitude: a.longitude });
+  destInteractions = 0;
+  destOpenedAt = Date.now();
+  chosenCandidate = last?.record.selectedCandidate ?? null;
+  setDestination(last ? last.record.confirmedPoint : { latitude: a.latitude, longitude: a.longitude }, { countInteraction: false });
   $("dest-device").textContent = a.source === "device_position"
     ? `Device estimate ${fmt(a.latitude)}, ${fmt(a.longitude)} ±${a.accuracyMeters ?? "?"}m — positioning evidence, kept even if the destination moves.`
     : `Pin ${fmt(a.latitude)}, ${fmt(a.longitude)} (source: ${a.source}) — no device fix on this record.`;
@@ -1097,6 +1201,9 @@ const BACKUP_SPECS = () => [
   { name: "confirmations", store: confirmStore, validate: validateDestinationConfirmation,
     save: (r, id) => confirmStore.save(r, { id }),
     refs: [{ field: "assertionId", into: ["assertions"] }] },
+  { name: "fieldMeasurements", store: fieldStore, validate: validateFieldMeasurement,
+    save: (r, id) => fieldStore.save(r, { id }),
+    refs: [] },
 ];
 
 let pendingBackup = null;
@@ -1190,4 +1297,5 @@ for (const [name, store] of [
 $("f-provenance").value = defaultProvenanceRef();
 // Default the signer/reviewer name for the demo user; it remains editable.
 if (!$("t-signer").value) $("t-signer").value = $("h-decidedby").value || "";
+renderFieldList();
 refreshList();

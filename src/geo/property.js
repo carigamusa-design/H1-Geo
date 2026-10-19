@@ -153,6 +153,7 @@ export function createDestinationConfirmation({
   assertionId, deviceEstimate = null, confirmedPoint,
   candidates = null, accuracyMeters = null, confirmedBy,
   source = "manual_adjustment", notes = null, confirmedAt = new Date().toISOString(),
+  selectedCandidate = null, interactionCount = null, durationMs = null,
 }) {
   const moved = deviceEstimate
     ? distanceMeters(
@@ -196,6 +197,15 @@ export function createDestinationConfirmation({
       })),
       summary: ambiguity.summary,
     },
+    selectedCandidate: selectedCandidate ? {
+      id: selectedCandidate.id ?? null,
+      label: selectedCandidate.label ?? null,
+      kind: selectedCandidate.kind ?? null,
+      sourceProvider: selectedCandidate.source?.provider ??
+        selectedCandidate.sourceProvider ?? null,
+    } : null,
+    interactionCount: isFiniteNumber(interactionCount) ? Math.round(interactionCount) : null,
+    durationMs: isFiniteNumber(durationMs) ? Math.round(durationMs) : null,
     source,
     confidence: confidenceFor({ ambiguity, deviceEstimate, source }),
     confirmedBy,
@@ -229,6 +239,11 @@ export function validateDestinationConfirmation(value) {
     err("correctionApplied.originalPreserved", "must be true — the original estimate is evidence and is never discarded");
   }
   if (!AMBIGUITY_VERDICTS.includes(value.ambiguity?.verdict)) err("ambiguity.verdict", "must be a known verdict");
+  if (value.selectedCandidate !== null && value.selectedCandidate !== undefined &&
+      (typeof value.selectedCandidate !== "object" ||
+       (value.selectedCandidate.id === null && value.selectedCandidate.label === null))) {
+    err("selectedCandidate", "must be null or a candidate reference");
+  }
   if (!CONFIDENCE_LEVELS.includes(value.confidence?.level)) err("confidence.level", "must be unverified | low | moderate — never 'verified'");
   if (typeof value.confirmedBy !== "string" || !value.confirmedBy.trim()) err("confirmedBy", "must name who confirmed");
   if (typeof value.confirmedAt !== "string" || Number.isNaN(Date.parse(value.confirmedAt))) err("confirmedAt", "must be an ISO timestamp");
