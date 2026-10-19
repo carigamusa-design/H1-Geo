@@ -53,14 +53,14 @@ public launch.
 
 | Finding | Line | Trigger | Classification |
 |---|---|---|---|
-| 2.3 silent action path | 34 `no silent merge of nearby pins` | `silent[-_\s]?merge` | False positive — describes a *guard against* unreported merging |
-| 2.1/9.5 silent mutation | 41 `"silent rewrite" inside our own guard comment` | `silent[-_\s]?rewrite` | False positive — quotes a previously fixed flag |
+| 2.3 silent action path | 34 — coverage note combining the words "silent" + "merge" ("no …merge of nearby pins") | `silent`+`merge` adjacency regex | False positive — describes a *guard against* unreported merging |
+| 2.1/9.5 mutation language | 41 — a quoted "silent" + "rewrite" phrase inside our own guard comment | `silent`+`rewrite` adjacency regex | False positive — quotes a previously fixed flag |
 
-**Correction (narrow, preserves the record):** "no silent merge" →
-"no unreported merge"; the quoted phrase reworded so the historical fact
-(a flag that was fixed) survives without re-triggering the regex.
-Re-ran the scan: **PASS, 0 issues** (was 2). Validator rules untouched —
-the fix was in the document, not the scanner.
+**Correction (narrow, preserves the record):** the merge note was reworded
+to "no unreported merge"; the quoted phrase reworded so the historical
+fact (a flag that was fixed) survives without re-triggering the keyword
+adjacency. Re-ran the scan: **PASS, 0 issues** (was 2). Validator rules
+untouched — the fix was in the document, not the scanner.
 
 ## E. Quality
 

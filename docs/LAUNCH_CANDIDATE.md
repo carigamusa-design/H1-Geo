@@ -1,11 +1,23 @@
-# H1-Geo Launch-Candidate Report (GEO-018)
+# H1-Geo Launch-Candidate Report (GEO-019 update)
 
-**Date:** GEO-018 · **Verdict:** LAUNCH CANDIDATE — ready for a *controlled,
+**Date:** GEO-019 · **Verdict:** LAUNCH CANDIDATE — ready for a *controlled,
 human-operated pilot*; not ready for public launch.
-Basis: 168/168 automated tests, 78/78 end-to-end regression checks
+Basis: 183/183 automated tests, 78/78 end-to-end regression checks
 (`scripts/pilot-regression.mjs`) across all three OSM pilot regions,
 Factory validators clean. **`real n = 0` genuine field measurements —
 no field-accuracy claim exists.**
+Acceptance bars are now explicit in `docs/PILOT_ACCEPTANCE.md`: the
+controlled-pilot bar is **not yet met** (requires a human neighbor-trial
+with real measurements); the public-launch bar is listed separately.
+
+## GEO-019 update — mobile access resolved
+
+The GEO-018 device-access blocker is addressed: `scripts/gen-dev-cert.mjs`
++ `HTTPS=1 HOST=0.0.0.0 node scripts/serve-stage-b.mjs` now serve the pilot
+over HTTPS on the LAN with a locally trusted dev certificate — phone GPS
+works in a secure context without tunnels or disabled browser security.
+Setup: `docs/MOBILE_PILOT_SETUP.md`. Physical device confirmation remains
+BLOCKED until a person performs it.
 
 ## Functionality demonstrated
 
@@ -45,32 +57,17 @@ and draggable destination pin work on desktop and mobile widths.
 ## Mobile usability
 
 Narrow-screen layout (≤760px) stacks map/sidebar, ≥40px touch targets.
-**Real-device verification: BLOCKED** — see below.
-
-### Real-device access — findings
-
-- The demo server binds `127.0.0.1` by default. `HOST=0.0.0.0
-  node scripts/serve-stage-b.mjs` now exposes it on the LAN.
-- A phone on the same Wi-Fi can then open `http://<lan-ip>:8734/stage-b`.
-- **Geolocation will still be denied**: browsers only allow
-  `navigator.geolocation` in secure contexts; `http://LAN-IP` is not one.
-  Manual pins, candidate confirmation, and all local workflows function —
-  only device GPS and the multi-reading acquisition are unavailable.
-- Exact operator steps for a real-device trial:
-  1. `HOST=0.0.0.0 node scripts/serve-stage-b.mjs`
-  2. On the phone: Chrome → `chrome://flags` →
-     "Insecure origins treated as secure" → add `http://<lan-ip>:8734`
-     (developer flag; acceptable for a controlled trial), **or**
-     tunnel the port (`ssh -R`, `ngrok`, `cloudflared`) so the phone
-     sees an `https://` origin.
-  3. Grant location permission, then follow `docs/OPERATOR_GUIDE.md`.
-- Physical device testing could not be performed from this execution
-  environment — marked BLOCKED, not simulated.
+**Real-device verification: BLOCKED** until a person performs it — the
+access path is now solved (GEO-019): a self-signed LAN HTTPS cert makes
+the phone origin secure so geolocation works legitimately. Steps in
+`docs/MOBILE_PILOT_SETUP.md`. The former workarounds (insecure-origin
+flag, tunnels) are superseded and no longer needed.
 
 ## Remaining blockers to a controlled pilot
 
 1. Zero real measurements — must run the checklist/guide for real.
-2. Real-device geolocation requires the HTTPS/secure-context workaround above.
+2. Real-device geolocation path exists (LAN HTTPS dev cert) but is
+   unverified on an actual phone — BLOCKED pending a person.
 3. No operator has yet rehearsed the full loop on a phone.
 4. Consent/privacy steps in the guide are documented but unexercised.
 

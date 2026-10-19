@@ -36,6 +36,7 @@ import {
 } from "./vnn-export.js";
 import { workflowStatus, loadH1ExampleScenario, isSyntheticRecord,
   draftIndex, filterDrafts, STAGE_LABELS } from "./workflow.js";
+import { pilotRunSteps, pilotNextStep } from "./pilot-run.js";
 import { createBackup, validateBackup, restoreBackup } from "./backup.js";
 import { lookupTerritory, locationStatus, checkCountryMatch } from "../geo/territory.js";
 import { createSiteDescriptor, validateSiteDescriptor, SITE_STORE_KEY } from "../geo/site.js";
@@ -450,32 +451,23 @@ function renderProgress() {
 }
 
 // GEO-018: "Pilot run" — one ordered pass through the real sections.
-// Ticks are computed from actual saved state, never from clicks.
-const PILOT_STEPS = [
-  { text: "Save a location (device or manual pin)", anchor: "fs-locate",
-    done: (s) => s.assertions.length > 0 },
-  { text: "Confirm the intended destination (3b)", anchor: "fs-dest",
-    done: () => confirmStore.list().length > 0 },
-  { text: "Record an observation and link evidence", anchor: "fs-observe",
-    done: () => observationStore.list().length > 0 },
-  { text: "Create the opportunity draft", anchor: "fs-draft",
-    done: (s) => s.draftStates.length > 0 },
-  { text: "Named reviewer approves the draft", anchor: "fs-draft",
-    done: (s) => s.draftStates.some((d) => d.review.state === "approved") },
-  { text: "Review the handoff package (still local — no VNN)", anchor: "fs-handoff",
-    done: (s) => s.draftStates.some((d) => d.packages.length > 0) },
-];
-
+// Step model lives in pilot-run.js (testable); ticks come from stores.
 function renderPilotRun(status) {
+  const steps = pilotRunSteps({
+    assertionCount: status.assertions.length,
+    confirmationCount: confirmStore.list().length,
+    observationCount: observationStore.list().length,
+    draftStates: status.draftStates,
+  });
+  const nextIdx = pilotNextStep(steps);
   const ol = $("pilot-run");
   ol.replaceChildren();
-  const nextIdx = PILOT_STEPS.findIndex((st) => !st.done(status));
-  PILOT_STEPS.forEach((st, i) => {
+  steps.forEach((st, i) => {
     const li = document.createElement("li");
-    li.className = st.done(status) ? "done" : i === nextIdx ? "next" : "";
+    li.className = st.done ? "done" : i === nextIdx ? "next" : "";
     const a = document.createElement("a");
     a.href = `#${st.anchor}`;
-    a.textContent = `${st.done(status) ? "✓ " : ""}${st.text}`;
+    a.textContent = `${st.done ? "✓ " : ""}${st.text}`;
     li.appendChild(a);
     ol.appendChild(li);
   });
