@@ -52,6 +52,8 @@ import { createFieldMeasurement, validateFieldMeasurement,
   measurementSummary, FIELD_STORE_KEY } from "../geo/field.js";
 import { fieldDashboard, exportFieldMeasurements,
   validateFieldExport } from "../geo/dashboard.js";
+import { collectReadings } from "../geo/acquisition.js";
+import { improvementFindings } from "../geo/improvement.js";
 import { createFeedbackStore, createFeedback, pilotReport,
   validateFeedback } from "./pilot.js";
 import { validateCoordinateAssertion } from "../coordinate-assertion.js";
@@ -777,6 +779,21 @@ function renderDashboard(entries) {
   $("dash-caveat").textContent = d.caveat ?? `${d.real.count} genuine measurements on record.`;
   $("dash-regions").textContent =
     `by region — real ${JSON.stringify(d.real.byRegion)} · simulated ${JSON.stringify(d.simulated.byRegion)}`;
+  const findings = improvementFindings(entries);
+  const fl = $("dash-findings");
+  fl.replaceChildren();
+  const note = document.createElement("li");
+  note.className = "hint";
+  note.textContent = findings.note ?? `${findings.findings.length} finding(s) from ${findings.realCount} real measurement(s).`;
+  fl.appendChild(note);
+  for (const f of findings.findings) {
+    const li = document.createElement("li");
+    const p = document.createElement("p");
+    p.className = "hint";
+    p.textContent = `[${f.kind} · ${f.scope}] ${f.message} → ${f.suggestedAction}`;
+    li.appendChild(p);
+    fl.appendChild(li);
+  }
 }
 
 $("btn-fld-device").addEventListener("click", () => {
@@ -803,6 +820,56 @@ $("btn-fld-device").addEventListener("click", () => {
       notice(describeGeolocationError(err), "warn"); },
     { enableHighAccuracy: true, timeout: 15000 },
   );
+});
+
+// GEO-017: bounded acquisition — several permissioned readings, honest
+// stability reporting, user picks a real reading (never an averaged fix).
+let lastAcquisition = null;
+
+$("btn-acq").addEventListener("click", async () => {
+  if (!("geolocation" in navigator)) {
+    $("acq-summary").textContent = "Location unavailable on this device.";
+    notice(describeGeolocationError(null), "warn");
+    return;
+  }
+  $("acq-summary").textContent = "Collecting readings…";
+  $("acq-errors").textContent = "";
+  $("acq-list").replaceChildren();
+  const getPosition = () => new Promise((resolve, reject) =>
+    navigator.geolocation.getCurrentPosition(
+      (pos) => resolve({ latitude: pos.coords.latitude, longitude: pos.coords.longitude,
+        accuracyMeters: pos.coords.accuracy }),
+      reject,
+      { enableHighAccuracy: true, timeout: 15000 }));
+  lastAcquisition = await collectReadings({ getPosition, attempts: 5 });
+  const { readings, errors, summary } = lastAcquisition;
+  $("acq-summary").textContent = readings.length
+    ? `${summary.count} readings — ${summary.detail} · best ±${summary.best?.accuracyMeters ?? "?"}m · median ±${summary.medianAccuracy ?? "?"}m. ` +
+      "Pick a real reading below — readings are never averaged."
+    : "No readings acquired.";
+  $("acq-errors").textContent = errors.length
+    ? `${errors.length} attempt(s) failed: ${errors.map((e) => `#${e.attempt} ${e.message}`).join("; ")}`
+    : "";
+  const list = $("acq-list");
+  for (const [i, r] of readings.entries()) {
+    const li = document.createElement("li");
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.textContent = "Use";
+    btn.addEventListener("click", () => {
+      liveDeviceFix = { ...r, source: "device_position" };
+      $("fld-device").textContent =
+        `Chosen reading #${i + 1}: ${r.latitude.toFixed(6)}, ${r.longitude.toFixed(6)} ` +
+        `±${r.accuracyMeters ?? "?"}m (${r.band}) — attaches to the next measurement.`;
+      adapter.accuracyCircle(liveDeviceFix);
+    });
+    const p = document.createElement("span");
+    p.className = "hint";
+    p.textContent = ` #${i + 1} ${r.latitude.toFixed(6)}, ${r.longitude.toFixed(6)} ±${r.accuracyMeters ?? "?"}m · ${r.band}`;
+    li.appendChild(btn);
+    li.appendChild(p);
+    list.appendChild(li);
+  }
 });
 
 $("btn-fld-export").addEventListener("click", () => {

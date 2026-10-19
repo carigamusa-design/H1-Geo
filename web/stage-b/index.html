@@ -39,6 +39,18 @@
     .step.done { background: #d1e7dd; color: #0f5132; }
     .step.now { background: #cfe2ff; color: #084298; }
     .step small { display: block; font-weight: 400; }
+
+    /* GEO-017: narrow-screen / touch layout — same components, stacked. */
+    @media (max-width: 760px) {
+      body { height: auto; }
+      main { flex-direction: column; }
+      #map { flex: none; height: 55vh; min-height: 300px; }
+      aside { width: auto; border-left: none; border-top: 1px solid #ccc; }
+      button { min-height: 40px; padding: 8px 10px; }
+      .row button { min-height: 48px; font-size: 15px; }
+      .pin-item { padding: 10px; }
+      fieldset { padding: 10px; }
+    }
   </style>
 </head>
 <body>
@@ -152,7 +164,11 @@
           <legend>3c. Field validation</legend>
           <p class="hint">Compare the device/selected destination against an <b>independently</b> established reference — your own pin or selection is not ground truth. Simulated unless explicitly marked real.</p>
           <button id="btn-fld-device" type="button">Capture device position for this measurement</button>
+          <button id="btn-acq" type="button">Collect 5 readings (pick the best real one)</button>
           <p id="fld-device" class="hint">No device fix captured for the next measurement.</p>
+          <p id="acq-summary" class="kv"></p>
+          <p id="acq-errors" class="hint"></p>
+          <ul id="acq-list"></ul>
           <label for="fld-session">Field session label (optional, e.g. "Trial A — Summerhill")</label>
           <input id="fld-session" type="text">
           <label for="fld-ref-lat">Reference latitude</label>
@@ -186,6 +202,7 @@
           <p id="dash-sim" class="kv"></p>
           <p id="dash-regions" class="hint"></p>
           <p id="dash-caveat" class="hint"></p>
+          <ul id="dash-findings"></ul>
           <button id="btn-fld-export" type="button">Export trial results (local JSON)</button>
           <p class="hint">Numbers come from stored field measurements only — real vs simulated never mixed. Local export; nothing is uploaded.</p>
         </fieldset>
